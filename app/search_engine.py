@@ -8,9 +8,11 @@
 """
 from __future__ import annotations
 
+import heapq
 import json
 import logging
 import re
+from functools import lru_cache
 from typing import Dict, List, Sequence, Tuple
 
 from app.llm_generic import ask_llm
@@ -42,23 +44,57 @@ def _norm_term(term: str) -> str:
     return term.strip().lower().replace("ё", "е")
 
 
-def _expand_term_variants(term: str) -> set[str]:
-    normalized = _norm_term(term)
+def _build_normalized_synonym_maps() -> tuple[dict[str, tuple[str, ...]], dict[str, tuple[str, ...]]]:
+    """Build forward/reverse synonym maps in normalized form once at import time."""
+    fwd: dict[str, set[str]] = {}
+    rev: dict[str, set[str]] = {}
+
+    for raw_key, raw_syns in _TERM_SYNONYMS.items():
+        key = _norm_term(raw_key)
+        if not key:
+            continue
+        syns = {_norm_term(s) for s in raw_syns if _norm_term(s)}
+        if not syns:
+            continue
+
+        fwd.setdefault(key, set()).update(syns)
+        for syn in syns:
+            rev.setdefault(syn, set()).add(key)
+
+    fwd_norm: dict[str, tuple[str, ...]] = {k: tuple(sorted(v)) for k, v in fwd.items()}
+    rev_norm: dict[str, tuple[str, ...]] = {k: tuple(sorted(v)) for k, v in rev.items()}
+    return fwd_norm, rev_norm
+
+
+_NORMALIZED_SYNONYMS_FWD, _NORMALIZED_SYNONYMS_REV = _build_normalized_synonym_maps()
+
+
+@lru_cache(maxsize=8192)
+def _expand_term_variants_cached(normalized: str) -> tuple[str, ...]:
+    """Expand one normalized term into sorted tuple of variants (cached)."""
     if not normalized:
-        return set()
+        return tuple()
 
     variants = {normalized}
-    # forward map
-    variants.update(_norm_term(v) for v in _TERM_SYNONYMS.get(normalized, ()))
-    # reverse map
-    for key, syns in _TERM_SYNONYMS.items():
-        if normalized == _norm_term(key) or normalized in {_norm_term(v) for v in syns}:
-            variants.add(_norm_term(key))
-            variants.update(_norm_term(v) for v in syns)
 
-    # graph expansion (Variant 3): related process/equipment/measurement terms
+    # forward map: key -> synonyms
+    variants.update(_NORMALIZED_SYNONYMS_FWD.get(normalized, ()))
+
+    # reverse map: synonym -> canonical keys
+    for key in _NORMALIZED_SYNONYMS_REV.get(normalized, ()):
+        variants.add(key)
+        variants.update(_NORMALIZED_SYNONYMS_FWD.get(key, ()))
+
+    # graph expansion: related process/equipment/measurement terms
     variants.update(_norm_term(v) for v in expand_terms_with_graph(variants, depth=1, max_terms=20))
-    return {v for v in variants if v}
+
+    return tuple(sorted(v for v in variants if v))
+
+
+def _expand_term_variants(term: str) -> set[str]:
+    """Public helper retaining set semantics for call sites."""
+    normalized = _norm_term(term)
+    return set(_expand_term_variants_cached(normalized))
 
 
 def _expand_query_groups(words: Sequence[str]) -> list[set[str]]:
@@ -74,8 +110,9 @@ def _group_match(text: str, groups: Sequence[set[str]], mode: str) -> bool:
     if not groups:
         return True if mode == "all" else False
 
-    checks = [any(variant in text for variant in variants) for variants in groups]
-    return all(checks) if mode == "all" else any(checks)
+    if mode == "all":
+        return all(any(variant in text for variant in variants) for variants in groups)
+    return any(any(variant in text for variant in variants) for variants in groups)
 
 
 def _extract_json(text: str) -> Dict[str, List[str]]:
@@ -138,6 +175,8 @@ def run_fast_search(
     top_n: int = 30,
 ) -> List[dict]:
     """Прямолинейный поиск по AND/OR/NOT‑словам без эмбеддингов. O(N)."""
+    if top_n <= 0:
+        return []
 
     # Пред‑нормализация + расширение терминов синонимами/аббревиатурами
     and_groups = _expand_query_groups([str(w) for w in query.get("AND", [])])
@@ -161,7 +200,11 @@ def run_fast_search(
             score += min(coverage, 20)
             ranked.append((score, chunk))
 
-    ranked.sort(key=lambda x: x[0], reverse=True)
+    if len(ranked) <= top_n:
+        ranked.sort(key=lambda x: x[0], reverse=True)
+    else:
+        ranked = heapq.nlargest(top_n, ranked, key=lambda x: x[0])
+
     return [ch for _, ch in ranked[:top_n]]
 
 
