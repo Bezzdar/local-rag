@@ -22,7 +22,7 @@ from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from slugify import slugify
 
 from app.chunk_manager import semantic_chunking
-from parsers.text_extraction import extract_blocks
+from parsers.text_extraction import TextBlock, extract_blocks
 from app.term_graph import extract_term_tags
 
 # ---------------------------------------------------------------------------
@@ -193,8 +193,9 @@ def get_file_text(folder: str, file: str) -> str:
     """Return plain text of a single source document (no embeddings)."""
     file_path = DOCS_PATH / folder / file
     try:
-        blocks = extract_blocks(file_path)
-        return "\n\n".join(b["content"] for b in blocks if b["type"] == "text")
+        blocks: list[TextBlock] = extract_blocks(file_path)
+        text_blocks = [b["text"] for b in blocks if b.get("type", "text") == "text"]
+        return "\n\n".join(part for part in text_blocks if part.strip())
     except Exception as exc:  # noqa: BLE001
         logger.error("get_file_text failed for %s: %s", file_path, exc)
         return ""

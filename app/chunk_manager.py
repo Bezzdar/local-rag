@@ -41,7 +41,7 @@ except ImportError:  # fallback — грубый ASCII‑slug
         value = value.lower() if lowercase else value
         return value.strip("._-")[:63]
 
-from parsers.text_extraction import extract_blocks
+from parsers.text_extraction import TextBlock, extract_blocks
 from app.search_tools import tfidf_search
 from app.config import DOCS_PATH
 
@@ -349,7 +349,7 @@ def _chunk_text_with_overlap(text: str, max_len: int = 1500, overlap_sentences: 
     return [ch.strip() for ch in chunks if ch.strip()]
 
 
-def semantic_chunking(blocks: list, file_path: str) -> list[dict]:
+def semantic_chunking(blocks: list[TextBlock], file_path: str) -> list[dict]:
     """Parent/child chunking for technical docs.
 
     * Parent chunk: larger semantic unit (section-level context).
@@ -360,14 +360,11 @@ def semantic_chunking(blocks: list, file_path: str) -> list[dict]:
     chunk_id = 0
 
     for raw in blocks:
-        if isinstance(raw, dict):
-            text = raw.get("text", "").strip()
-            b_type = raw.get("type", "text")
-            page = raw.get("page", "-")
-        else:
-            text = str(raw).strip()
-            b_type = "text"
-            page = "-"
+        text = raw.get("text", "").strip()
+        b_type = raw.get("type", "text")
+        page = raw.get("page", "-")
+        parser_section_id = raw.get("section_id")
+        parser_section_title = raw.get("section_title")
 
         if not text:
             continue
@@ -400,13 +397,15 @@ def semantic_chunking(blocks: list, file_path: str) -> list[dict]:
         for sec_idx, section in enumerate(sections, start=1):
             parent_parts = _chunk_text_with_overlap(section, max_len=_PARENT_MAX_LEN, overlap_sentences=0)
             for parent_idx, parent_text in enumerate(parent_parts, start=1):
-                section_key = f"s{sec_idx}.p{parent_idx}"
+                section_key = parser_section_id or f"s{sec_idx}.p{parent_idx}"
                 parent_id = add_chunk(
                     parent_text,
                     level="parent",
                     parent_id=None,
                     section_id=section_key,
                 )
+                if parser_section_title:
+                    chunks[-1]["section_title"] = parser_section_title
 
                 child_parts = _chunk_text_with_overlap(parent_text, max_len=_CHILD_MAX_LEN, overlap_sentences=1)
                 for child_text in child_parts:
@@ -418,5 +417,7 @@ def semantic_chunking(blocks: list, file_path: str) -> list[dict]:
                         parent_id=parent_id,
                         section_id=section_key,
                     )
+                    if parser_section_title:
+                        chunks[-1]["section_title"] = parser_section_title
 
     return chunks
