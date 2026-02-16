@@ -1,156 +1,169 @@
-# RAG Assistant (локальный проект)
+# local-rag-assistant
 
-Тестовый код для RAG‑ассистента с локальной индексацией документов, извлечением текста из файлов, чанкизацией и поиском по ChromaDB.
+Локальный NotebookLM-подобный ассистент в monorepo:
 
----
+- `apps/api` — FastAPI backend (upload → index → retrieval → chat/stream)
+- `apps/web` — Next.js frontend
+- `packages/rag_core` — перенесённое legacy-ядро (`app/`, `parsers/`)
 
-## 1) Общее назначение
+## Legacy core
 
-Проект собирает документы из `data/docs/`, извлекает из них текст, разбивает на семантические чанки, индексирует в локальную векторную БД и использует эти данные в поиске/ответах ассистента.
+В `packages/rag_core` перенесены legacy-модули:
 
-Ключевые сценарии:
-- индексация папки документов;
-- редактирование/просмотр чанков;
-- гибридный поиск (sparse + dense, в зависимости от настроек);
-- запуск через Streamlit UI.
+- `packages/rag_core/app/*`
+- `packages/rag_core/parsers/*`
 
----
+Оригинальные `app/` и `parsers/` в корне сохранены.
 
-## 2) Подробная структура репозитория
+## What is real vs mock
 
-### Корень проекта
+### Реально работает
+- Upload сохраняет файл в `data/docs/<notebook_id>/...`.
+- Source проходит `indexing -> indexed/failed`.
+- `GET /api/notebooks/{id}/index/status` показывает реальные счётчики.
+- `GET /api/chat/stream` делает retrieval по индексированным блокам и возвращает citations с метаданными (`filename`, `page`, `section`).
 
-- `streamlit_app.py` — основной интерфейс приложения (Streamlit), точка входа для пользовательской работы с RAG.
-- `requirements.txt` — Python-зависимости проекта.
-- `README.md` — основная документация по структуре и текущей реализации.
-- `setup_venv.bat`, `start_app.bat` — вспомогательные скрипты запуска под Windows.
+### Упрощено
+- Legacy engine включается флагом `ENABLE_LEGACY_ENGINE=1` (по умолчанию off в этом окружении).
+- Генерация финального текста ответа пока template-based.
 
-### Папка `app/` (основная бизнес-логика)
+## Data paths
 
-- `app/engine.py` — high-level API индексации:
-  - выбор документов;
-  - прогон extraction + chunking;
-  - сохранение в Chroma;
-  - утилиты удаления/перестроения индекса.
-- `app/chunk_manager.py` — менеджер чанков и локальных хранилищ:
-  - построение parent/child чанков;
-  - фильтрация/поиск по чанкам;
-  - операции загрузки/сохранения и вспомогательные CRUD-функции.
-- `app/search_engine.py` — логика retrieval и поиска по индексу.
-- `app/search_tools.py` — вспомогательные search-инструменты (в т.ч. TF‑IDF функции).
-- `app/async_search.py` — асинхронные варианты поисковых операций.
-- `app/term_graph.py` — извлечение терминов и граф терминов для обогащения retrieval.
-- `app/llm_generic.py` — универсальный слой вызовов LLM.
-- `app/math_engine.py` — вычислительные/математические вспомогательные механизмы.
-- `app/chunk_editor.py` — отдельный UI/утилиты для редактирования чанков.
-- `app/config.py` — конфигурация путей и runtime-параметров.
-- `app/user_settings.py`, `app/user_settings.json` — пользовательские настройки и их хранение.
-
-### Папка `parsers/` (извлечение текста и NLP-предобработка)
-
-- `parsers/text_extraction.py` — центральный модуль парсинга документов:
-  - поддержка форматов: PDF, DOCX/DOC, TXT/LOG;
-  - очистка текста;
-  - удаление повторяющихся межстраничных шумов в PDF (колонтитулы/штампы);
-  - section-aware extraction (разбиение на разделы);
-  - единый контракт блоков `TextBlock`;
-  - опциональная TextRank-сегментация (с guardrail на длинных текстах);
-  - семантическая чанкизация (`semantic_chunk`) с overlap и дедупликацией.
-- `parsers/preprocessing.py` — сегментация и лемматизация (Natasha), lazy-init моделей.
-- `parsers/ner_extraction.py` — извлечение именованных сущностей (Natasha NamesExtractor), lazy-init.
-
-### Папка `data/`
-
-- `data/docs/` — входные документы для индексации (библиотека источников).
-- `data/index/` — persisted индексы Chroma по папкам.
-- `data/chunks/` — локальные JSON-артефакты с чанками (когда сохранение включено).
+- docs: `data/docs/`
+- index: `data/index/`
+- chunks artifacts: `data/chunks/`
 
 ---
 
-## 3) Текущий контракт данных парсера (важно)
+## Quick Start (API)
 
-`extract_blocks(...)` из `parsers/text_extraction.py` возвращает **`list[TextBlock]`**.
+### Online install
 
-Структура `TextBlock`:
-- `text`: текст блока;
-- `type`: тип блока (обычно `text`);
-- `page`: номер страницы/маркер страницы;
-- `source`: путь к исходному файлу;
-- `section_id`: стабильный идентификатор раздела (например `p1.s2`);
-- `section_title`: заголовок раздела.
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r apps/api/requirements.txt
+```
 
-Зачем это нужно:
-- единый и предсказуемый формат между parser → chunk_manager → engine;
-- возможность обогащать retrieval метаданными разделов;
-- меньше интеграционных ошибок при развитии pipeline.
+### Offline install (wheels)
 
----
+```bash
+# online machine
+mkdir -p wheels
+pip download -r apps/api/requirements.txt -d wheels
 
-## 4) Как работает pipeline индексации
+# offline machine
+python -m venv .venv
+source .venv/bin/activate
+pip install --no-index --find-links=./wheels -r apps/api/requirements.txt
+```
 
-1. Пользователь выбирает папку в `data/docs/...`.
-2. `app/engine.py` получает список файлов папки.
-3. Для каждого файла вызывается `parsers.text_extraction.extract_blocks(...)`.
-4. `app/chunk_manager.semantic_chunking(...)` строит parent/child чанки с метаданными секции.
-5. Формируются документы и метаданные.
-6. Данные пишутся в Chroma (`data/index/...`).
+Для корпоративного индекса:
 
----
+```bash
+export PIP_INDEX_URL=https://<your-corp-pypi>/simple
+pip install -r apps/api/requirements.txt
+```
 
-## 5) Что уже оптимизировано в pipeline для качества и скорости RAG
+### Run API
 
-Реализовано:
-- удаление повторяющихся межстраничных шумовых строк в PDF;
-- section-aware extraction (перед чанкизацией);
-- унифицированный `TextBlock` контракт;
-- guardrails для TextRank на длинных документах;
-- адаптивный размер чанков + overlap;
-- дедупликация чанков на базе Simhash;
-- graceful degradation при отсутствии части NLP-зависимостей (`razdel` / `sumy`);
-- предрасчёт нормализованных словарей синонимов (forward/reverse) для быстрого boolean-search;
-- кэш расширения терминов (`lru_cache`) + short-circuit проверка групп (`all/any`) без промежуточных списков;
-- оптимизация top‑N в быстром поиске через `heapq.nlargest` при большом числе кандидатов;
-- кэширование TF‑IDF/эмбеддингов по детерминированному fingerprint корпуса и ускоренный top‑k (`argpartition`).
+```bash
+make run-api
+# или
+uvicorn apps.api.main:app --host 127.0.0.1 --port 8000 --reload
+```
 
-Ожидаемый эффект:
-- меньше шумовых совпадений при retrieval;
-- лучшее удержание контекста на границах чанков;
-- более стабильная релевантность top-k выдачи.
+### Full verification (проверено)
+
+```bash
+make verify
+# или
+bash scripts/verify.sh
+```
 
 ---
 
-## 6) Рекомендованные следующие улучшения
+## Quick Start (Web)
 
-Высокий приоритет:
-- нормализация таблиц/списков под retrieval (табличные summary + markdown-форма);
-- доменные шаблоны очистки техдоков (регистрационные хвосты, версии, инвентарные маркеры);
-- метрики качества чанков (recall@k, доля коротких/шумовых чанков, A/B стратегий).
+```bash
+cd apps/web
+npm install
+cp ../../.env.example .env.local
+npm run dev
+```
 
-Средний приоритет:
-- подключение лемматизации (`preprocessing.py`) как опционального режима для sparse-search;
-- обогащение chunk metadata через NER (`ner_extraction.py`) для фильтров/reranking.
+### Статус в текущем окружении
 
----
+В этом окружении `npm` registry недоступен:
 
-## 7) Быстрый старт
+- `npm install` падает с `E403 Forbidden`.
+- `npm run build` не стартует без зависимостей (`next: not found`).
 
-### Вариант для Windows через bat-файлы
+### Альтернативы
 
-1. Выполнить `setup_venv.bat` (создаст `./venv` и установит все зависимости).
-2. Выполнить `start_app.bat` (запустит Streamlit и откроет приложение в браузере).
+1. Настроить корпоративный registry/proxy:
 
-### Ручной вариант
+```bash
+npm config set registry https://<your-corp-npm-registry>/
+```
 
-1. Установить зависимости:
-   - `pip install -r requirements.txt`
-2. Запустить приложение:
-   - `streamlit run streamlit_app.py`
-3. Положить документы в `data/docs/<ваша_папка>/`.
-4. Запустить индексацию через UI (кнопка индексации в Streamlit-приложении).
+2. Offline установка из локального кэша/tarball (prebuilt node_modules cache/mirror).
 
 ---
 
-## 8) Примечания по совместимости
+## Manual testing checklist
 
-- Часть окружений может не иметь всех NLP-зависимостей; парсер поддерживает fallback-режимы.
-- Для `.doc` (не `.docx`) в общем случае может потребоваться внешний конвертер в зависимости от качества исходных файлов.
+1. **Upload**: загрузить PDF/DOCX/XLSX в выбранный notebook.
+2. **Index**: проверить, что статусы source переходят в `indexed`.
+3. **Chat**: отправить вопрос в чат (`mode=qa`).
+4. **Citations**: убедиться, что справа есть citations с `filename` и `page/section`.
+
+---
+
+## Smoke checks (manual curl)
+
+```bash
+NB_ID=$(curl -s http://127.0.0.1:8000/api/notebooks | python -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
+
+echo 'sample-pdf' > /tmp/smoke.pdf
+curl -s -X POST "http://127.0.0.1:8000/api/notebooks/$NB_ID/sources/upload" \
+  -F "file=@/tmp/smoke.pdf;type=application/pdf"
+
+SRC_JSON=$(curl -s "http://127.0.0.1:8000/api/notebooks/$NB_ID/sources")
+FILE_PATH=$(echo "$SRC_JSON" | python -c "import sys,json; print(json.load(sys.stdin)[-1]['file_path'])")
+
+curl -sG "http://127.0.0.1:8000/api/files" \
+  --data-urlencode "path=$FILE_PATH" -o /tmp/downloaded.bin
+
+curl -N "http://127.0.0.1:8000/api/chat/stream?notebook_id=$NB_ID&message=section&mode=qa"
+```
+
+---
+
+## Make commands
+
+```bash
+make verify   # full backend verification pipeline
+make run-api  # start API with logs via scripts/dev_run.sh
+make smoke    # alias to verify
+```
+
+---
+
+## Known issues
+
+- `pip install` может быть заблокирован proxy/403.
+  - workaround: wheels (`pip download` + `--no-index --find-links`).
+- `npm install` может быть заблокирован registry/403.
+  - workaround: корпоративный registry/proxy или offline npm cache.
+
+---
+
+## Deployment note (manual)
+
+Перед ручным развёртыванием на новом окружении:
+
+1. `make verify`
+2. Проверить `TEST_REPORT.md`
+3. Если web блокирован по npm — сначала поднять внутренний registry/proxy
+
