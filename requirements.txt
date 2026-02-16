@@ -1,71 +1,39 @@
-# requirements.txt — Python 3.10 (loose versions)
+# requirements.txt — зависимости для локального запуска (Python 3.10+)
 
-streamlit
+# --- UI / API ---
+streamlit>=1.32
+requests>=2.31
+aiohttp>=3.9
 
-# requirements\_dev.txt — гибкий набор для Python 3.11+
-
-# ------------------------------------------------------
-
-# • «Мягкие» диапазоны версий, только минимально‑необходимые ограничения
-
-# • GPU‑пакеты помечены как optional (комментируйте, если не нужны)
-
-# • py‑simhash исключён: на 3.11 его нет, код использует fallback‑stub
-
-# --- Core ML / Data --------------------------------------------------------
-
-numpy>=1.26           # 1.26.x поддерживает Py 3.11
+# --- Core data / retrieval ---
+numpy>=1.26,<3
 pandas>=2.1
-openpyxl>=3.1
 scikit-learn>=1.3
+chromadb>=0.4.22,<1
 
-# PyTorch: CPU‑колёсико ставится по‑умолчанию;
-
-# для GPU откройте строку с соответствующим +cu118/+cu121
-
-torch>=2.2.2
-
-# torch>=2.2.2+cu118      # <-- CUDA 11.8 (Windows/Linux)
-
-# torch>=2.2.2+cu121      # <-- CUDA 12.1
-
-# --- HuggingFace / Embeddings ---------------------------------------------
-
-transformers<4.50     # новый интерфейс 4.50+ ломает llama‑index 0.10
+# --- Embeddings / LLM tooling (используется в app/engine.py и app/search_tools.py) ---
+torch>=2.2
+transformers>=4.41,<4.50
+sentence-transformers>=2.6
 sentencepiece>=0.1.99
-sentence-transformers
-bitsandbytes>=0.43    # (optional) 4/8‑bit квантование
 accelerate>=0.27
-
-# --- Vector DB / Indexing --------------------------------------------------
-
-chromadb>=0.4.22
 llama-index-core~=0.10.0
 llama-index-vector-stores-chroma~=0.1.0
 llama-index-embeddings-huggingface
 llama-index-readers-file
-langchain>=0.2
 
-# --- Parsing & Doc formats -------------------------------------------------
-
-PyMuPDF>=1.24         # fitz
+# --- Parsing / документы ---
+PyMuPDF>=1.24
 pdfplumber>=0.10
-python-docx
-python-pptx
-docx2txt
-python-slugify
+python-docx>=1.1
+python-pptx>=0.6.23
+docx2txt>=0.8
+python-slugify>=8.0
 
-# --- Russian NLP -----------------------------------------------------------
-
+# --- Russian NLP / segmentation ---
 natasha>=1.6
 razdel>=0.5
-nltk>=3.9             # пунктуационный токенизатор (punkt); загрузите через nltk.download
-
-# --- Text segmentation / ranking ------------------------------------------
-
 sumy>=0.11
-networkx>=3.5         # 3.5+ требует Py 3.11, поэтому без пина вниз
 
-# --- Optional RAG / Quantized models --------------------------------------
-
-# auto-gptq>=0.7      # если решите использовать GPTQ‑LLM
+# Optional: пакет simhash можно не ставить — в коде есть fallback
+# simhash>=2.1.2
