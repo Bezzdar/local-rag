@@ -23,6 +23,7 @@ from slugify import slugify
 
 from app.chunk_manager import semantic_chunking
 from parsers.text_extraction import extract_blocks
+from app.term_graph import extract_term_tags
 
 # ---------------------------------------------------------------------------
 # Paths & logger
@@ -159,6 +160,10 @@ def trigger_indexing(folder: str) -> None:
             "file_path": str(ch["file"]),
             "page_label": ch.get("page"),
             "type": ch.get("type", "text"),
+            "chunk_level": ch.get("chunk_level", "atomic"),
+            "parent_id": ch.get("parent_id"),
+            "section_id": ch.get("section_id"),
+            "term_tags": extract_term_tags(ch.get("text", "")),
         }
         for ch in all_chunks
     ]

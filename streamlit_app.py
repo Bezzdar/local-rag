@@ -1,12 +1,8 @@
 import os
-import sys
-import subprocess
 import logging
-from functools import lru_cache
 from typing import List
 
 import streamlit as st
-import pandas as pd
 import requests
 
 # ----------------- ENV & LOGGING -------------------------------------------
@@ -26,7 +22,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 from app.engine import (
     get_library_folders, list_documents_for_folder, check_indexed_files,
-    trigger_indexing, rebuild_index_from_folders
+    trigger_indexing
 )
 from app.llm_generic import ask_llm
 from app.user_settings import (
@@ -58,22 +54,40 @@ def cached_library_folders() -> List[str]:
 def cached_count_chunks(folder: str) -> int:
     return count_chunks_in_index(folder)
 
-# ----------------- SUB‑PROCESSES -------------------------------------------
-#  Функции‑ланчеры индексации; subprocess нужны, чтобы не блокировать UI.
-# ---------------------------------------------------------------------------
+@st.cache_data(show_spinner=False)
+def cached_chunks_for_folder(folder: str) -> list[dict]:
+    return get_chunks_for_folder(folder)
 
-def _run_python(script: str, *args: str) -> None:
-    """Запуск вспомогательного python‑скрипта из текущей venv."""
-    python_exec = sys.executable
-    subprocess.Popen([python_exec, script, *args])
-
-
-def run_index_all() -> None:
-    _run_python("app/index_all.py")
+@st.cache_data(show_spinner=False)
+def cached_chunks_for_folders(folders: tuple[str, ...]) -> list[dict]:
+    return [ch for folder in folders for ch in cached_chunks_for_folder(folder)]
 
 
-def run_index_one(folder: str) -> None:
-    _run_python("app/index_one.py", folder)
+def _normalize_url_from_port(raw: str, fallback: str) -> str:
+    raw = (raw or "").strip()
+    if not raw:
+        return fallback
+    if raw.isdigit():
+        return f"http://127.0.0.1:{int(raw)}"
+    return raw
+
+
+def _probe_llm_server(url: str) -> tuple[str, str]:
+    base = url.rstrip("/")
+    try:
+        ping = requests.get(base + "/version", timeout=2)
+        if ping.status_code == 200:
+            return "success", "llama.cpp"
+    except Exception:
+        pass
+
+    try:
+        ping = requests.get(base + "/api/tags", timeout=2)
+        if ping.status_code == 200:
+            return "success", "ollama"
+        return "warning", "unknown"
+    except Exception as exc:
+        return "error", str(exc)
 
 # ----------------- STREAMLIT CONFIG ----------------------------------------
 st.set_page_config(page_title="RAG Ассистент", layout="wide")
@@ -185,7 +199,7 @@ if tab == "Обработка документов":
             folders = st.session_state.get("active_library_folders", [])
 
             all_chunks = (
-                [ch for f in folders for ch in get_chunks_for_folder(f)] if folders else chunk_store.chunks
+                cached_chunks_for_folders(tuple(sorted(folders))) if folders else chunk_store.chunks
             )
             query, log_string = llm_generate_query(user_prompt)
 
@@ -254,7 +268,7 @@ if tab == "Обработка документов":
             found = [
                 ch
                 for folder in folders
-                for ch in get_chunks_for_folder(folder)
+                for ch in cached_chunks_for_folder(folder)
                 if search_query.lower() in ch["text"].lower()
             ]
             chunk_store.add_unique(found)
@@ -304,11 +318,17 @@ elif tab == "Библиотека":
 
             if st.button("Индексировать выбранную папку"):
                 trigger_indexing(folder_to_view)
+                cached_count_chunks.clear()
+                cached_chunks_for_folder.clear()
+                cached_chunks_for_folders.clear()
                 st.success(f"Папка «{folder_to_view}» отправлена на индексацию.")
 
             if st.button("Индексировать все папки"):
                 for folder in folders:
                     trigger_indexing(folder)
+                cached_count_chunks.clear()
+                cached_chunks_for_folder.clear()
+                cached_chunks_for_folders.clear()
                 st.success("Индексация всех папок запущена.")
 
             st.markdown("Проверка чанков:")
@@ -492,39 +512,58 @@ elif tab == "Настройки":
     with col1:
         st.markdown("**Аналитическая модель**")
         analytical_url = st.text_input(
-            "Адрес сервера (аналитика)",
+            "Адрес сервера (аналитика) или порт Ollama",
             get_analytical_server_url(),
             key="analytical_url",
+            help="Можно указать полный URL (http://host:port) или только порт, например 11434.",
         )
+        analytical_url = _normalize_url_from_port(analytical_url, get_analytical_server_url())
         set_analytical_server_url(analytical_url)
 
-        try:
-            ping = requests.get(analytical_url.rstrip("/") + "/version", timeout=2)
-            if ping.status_code == 200:
-                st.success(f"🟢 Сервер онлайн: {analytical_url}")
-            else:
-                st.warning(f"⚠️ Сервер отвечает, но не штатно: {analytical_url}")
-        except Exception as e:
-            st.error(f"🔴 Сервер не отвечает: {analytical_url} ({e})")
+        analytical_model = st.text_input(
+            "Имя модели (аналитика)",
+            get_active_analytical_model(),
+            key="analytical_model_name",
+            help="Для Ollama укажите тег модели, например llama3.1:8b или qwen2.5:7b.",
+        )
+        set_active_analytical_model(analytical_model.strip())
+
+        status, detail = _probe_llm_server(analytical_url)
+        if status == "success":
+            st.success(f"🟢 Сервер онлайн ({detail}): {analytical_url}")
+        elif status == "warning":
+            st.warning(f"⚠️ Сервер отвечает, но тип API не распознан: {analytical_url}")
+        else:
+            st.error(f"🔴 Сервер не отвечает: {analytical_url} ({detail})")
 
     with col2:
         st.markdown("**Математическая модель**")
         math_url = st.text_input(
-            "Адрес сервера (математика)",
+            "Адрес сервера (математика) или порт Ollama",
             get_math_server_url(),
             key="math_url",
+            help="Можно указать полный URL (http://host:port) или только порт, например 11434.",
         )
+        math_url = _normalize_url_from_port(math_url, get_math_server_url())
         set_math_server_url(math_url)
 
-        try:
-            ping = requests.get(math_url.rstrip("/") + "/version", timeout=2)
-            if ping.status_code == 200:
-                st.success(f"🟢 Сервер онлайн: {math_url}")
-            else:
-                st.warning(f"⚠️ Сервер отвечает, но не штатно: {math_url}")
-        except Exception as e:
-            st.error(f"🔴 Сервер не отвечает: {math_url} ({e})")
+        math_model = st.text_input(
+            "Имя модели (математика)",
+            get_active_math_model(),
+            key="math_model_name",
+            help="Для Ollama укажите тег модели, например deepseek-coder:6.7b.",
+        )
+        set_active_math_model(math_model.strip())
 
+        status, detail = _probe_llm_server(math_url)
+        if status == "success":
+            st.success(f"🟢 Сервер онлайн ({detail}): {math_url}")
+        elif status == "warning":
+            st.warning(f"⚠️ Сервер отвечает, но тип API не распознан: {math_url}")
+        else:
+            st.error(f"🔴 Сервер не отвечает: {math_url} ({detail})")
+
+    st.caption("Подсказка: для Ollama обычно используется порт 11434. Можно ввести только `11434`.")
     st.markdown("---")
 
     # ---- Тестовый чат ----------------------------------------------------
