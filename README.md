@@ -59,11 +59,6 @@
 - `parsers/preprocessing.py` — сегментация и лемматизация (Natasha), lazy-init моделей.
 - `parsers/ner_extraction.py` — извлечение именованных сущностей (Natasha NamesExtractor), lazy-init.
 
-### Папка `scripts/`
-
-- `scripts/index_all_folders.py` — пакетная индексация всех папок документов.
-- `scripts/trigger_indexing.py` — индексация одной папки через CLI.
-
 ### Папка `data/`
 
 - `data/docs/` — входные документы для индексации (библиотека источников).
@@ -147,7 +142,7 @@
 2. Запустить приложение:
    - `streamlit run streamlit_app.py`
 3. Положить документы в `data/docs/<ваша_папка>/`.
-4. Запустить индексацию через UI или CLI-скрипты из `scripts/`.
+4. Запустить индексацию через UI (кнопка индексации в Streamlit-приложении).
 
 ---
 
