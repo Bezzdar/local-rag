@@ -1,0 +1,31 @@
+# Python cache/artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# OS/editor artifacts
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Runtime outputs and logs
+*.log
+logs/
+
+# Local runtime data (generated indexes/chunks)
+data/index/
+data/chunks/
+
+# Streamlit runtime
+.streamlit/secrets.toml

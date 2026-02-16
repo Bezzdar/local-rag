@@ -290,51 +290,133 @@ def delete_chunk_by_number(folder: str, number: int, storage: str = "chroma") ->
 
 # ---------- semantic chunking ----------------------------------------------
 
+_HEADING_RE = re.compile(
+    r"^(?:\s*(?:раздел|глава|section)\s+\d+[\d.]*|\s*\d+(?:\.\d+)*\.?\s+\S+|\s*приложение\s+[a-zа-я0-9]+)",
+    re.IGNORECASE,
+)
+_PARENT_MAX_LEN = 2200
+_CHILD_MAX_LEN = 900
+
+
+def _split_technical_sections(text: str) -> list[str]:
+    """Split text by technical headings (1., 1.2, Раздел 3, Приложение А, ...)."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return []
+
+    sections: list[str] = []
+    buf: list[str] = []
+
+    for line in lines:
+        if _HEADING_RE.match(line) and buf:
+            sections.append("\n".join(buf).strip())
+            buf = [line]
+        else:
+            buf.append(line)
+
+    if buf:
+        sections.append("\n".join(buf).strip())
+
+    return sections
+
+
+def _chunk_text_with_overlap(text: str, max_len: int = 1500, overlap_sentences: int = 1) -> list[str]:
+    if len(text) <= max_len:
+        return [text]
+
+    sents = [s for s in re.split(r"(?<=[.!?])\s+", text) if s]
+    if not sents:
+        return [text]
+
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+
+    for sent in sents:
+        add_len = len(sent) + (1 if current else 0)
+        if current and current_len + add_len > max_len:
+            chunks.append(" ".join(current))
+            overlap = current[-overlap_sentences:] if overlap_sentences > 0 else []
+            current = list(overlap)
+            current_len = sum(len(s) + 1 for s in current)
+
+        current.append(sent)
+        current_len += len(sent) + 1
+
+    if current:
+        chunks.append(" ".join(current))
+
+    return [ch.strip() for ch in chunks if ch.strip()]
+
+
 def semantic_chunking(blocks: list, file_path: str) -> list[dict]:
-    """Heuristic segmentation of *blocks* into semantic chunks."""
+    """Parent/child chunking for technical docs.
+
+    * Parent chunk: larger semantic unit (section-level context).
+    * Child chunk: smaller retrieval-friendly unit linked via ``parent_id``.
+    """
 
     chunks: list[dict] = []
     chunk_id = 0
 
     for raw in blocks:
-        # ⇩⇩⇩ НОВОЕ: поддержка и dict-, и str-форматов блока
         if isinstance(raw, dict):
             text = raw.get("text", "").strip()
             b_type = raw.get("type", "text")
-            page   = raw.get("page", "-")
-        else:                       # старый формат - просто строка
-            text  = str(raw).strip()
+            page = raw.get("page", "-")
+        else:
+            text = str(raw).strip()
             b_type = "text"
-            page   = "-"
-        # ⇧⇧⇧-------------------------------------------------------------
+            page = "-"
 
         if not text:
             continue
 
-        def add_chunk(txt: str) -> None:
+        def add_chunk(txt: str, *, level: str = "atomic", parent_id: str | None = None, section_id: str | None = None) -> str:
             nonlocal chunk_id
             chunk_id += 1
-            chunks.append(
-                {
-                    "id": f"{file_path}_{chunk_id}",
-                    "text": txt,
-                    "type": b_type,
-                    "file": file_path,
-                    "page": page,
-                }
-            )
+            chunk = {
+                "id": f"{file_path}_{chunk_id}",
+                "text": txt,
+                "type": b_type,
+                "file": file_path,
+                "page": page,
+                "chunk_level": level,
+                "parent_id": parent_id,
+                "section_id": section_id,
+            }
+            chunks.append(chunk)
+            return chunk["id"]
 
-        if b_type in {"table", "formula", "image", "header"}:  # 1‑to‑1
-            add_chunk(text)
-        elif b_type == "text":
-            max_len = 1500
-            if len(text) <= max_len:
-                add_chunk(text)
-            else:  # split by sentences, 4‑sentence window
-                sents = [s for s in re.split(r"(?<=[.!?])\s+", text) if s]
-                for i in range(0, len(sents), 4):
-                    add_chunk(" ".join(sents[i : i + 4]))
-        else:  # fallback – treat as atomic
-            add_chunk(text)
+        if b_type in {"table", "formula", "image", "header"}:
+            add_chunk(text, level="atomic")
+            continue
+
+        if b_type != "text":
+            add_chunk(text, level="atomic")
+            continue
+
+        sections = _split_technical_sections(text) or [text]
+        for sec_idx, section in enumerate(sections, start=1):
+            parent_parts = _chunk_text_with_overlap(section, max_len=_PARENT_MAX_LEN, overlap_sentences=0)
+            for parent_idx, parent_text in enumerate(parent_parts, start=1):
+                section_key = f"s{sec_idx}.p{parent_idx}"
+                parent_id = add_chunk(
+                    parent_text,
+                    level="parent",
+                    parent_id=None,
+                    section_id=section_key,
+                )
+
+                child_parts = _chunk_text_with_overlap(parent_text, max_len=_CHILD_MAX_LEN, overlap_sentences=1)
+                for child_text in child_parts:
+                    if child_text == parent_text and len(child_parts) == 1:
+                        continue
+                    add_chunk(
+                        child_text,
+                        level="child",
+                        parent_id=parent_id,
+                        section_id=section_key,
+                    )
 
     return chunks

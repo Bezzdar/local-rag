@@ -15,6 +15,7 @@ from typing import Dict, List, Sequence, Tuple
 
 from app.llm_generic import ask_llm
 from app.user_settings import get_analytical_server_url
+from app.term_graph import expand_terms_with_graph
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,57 @@ logger = logging.getLogger(__name__)
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 _DEFAULT_QUERY: Dict[str, List[str]] = {"AND": [], "OR": [], "NOT": []}
+
+# Базовая доменная карта синонимов/аббревиатур для техдоков (можно расширять).
+_TERM_SYNONYMS: Dict[str, Sequence[str]] = {
+    "кипиа": ("контрольно-измерительные приборы", "автоматика", "приборы"),
+    "трубопровод": ("трубопроводы", "магистраль", "линия"),
+    "коррозия": ("коррозионный", "ржавчина", "окисление"),
+    "дефект": ("повреждение", "трещина", "разрушение"),
+    "резервуар": ("емкость", "бак", "танк"),
+    "давление": ("p", "избыточное давление"),
+    "температура": ("t", "нагрев", "охлаждение"),
+}
+
+
+def _norm_term(term: str) -> str:
+    return term.strip().lower().replace("ё", "е")
+
+
+def _expand_term_variants(term: str) -> set[str]:
+    normalized = _norm_term(term)
+    if not normalized:
+        return set()
+
+    variants = {normalized}
+    # forward map
+    variants.update(_norm_term(v) for v in _TERM_SYNONYMS.get(normalized, ()))
+    # reverse map
+    for key, syns in _TERM_SYNONYMS.items():
+        if normalized == _norm_term(key) or normalized in {_norm_term(v) for v in syns}:
+            variants.add(_norm_term(key))
+            variants.update(_norm_term(v) for v in syns)
+
+    # graph expansion (Variant 3): related process/equipment/measurement terms
+    variants.update(_norm_term(v) for v in expand_terms_with_graph(variants, depth=1, max_terms=20))
+    return {v for v in variants if v}
+
+
+def _expand_query_groups(words: Sequence[str]) -> list[set[str]]:
+    groups: list[set[str]] = []
+    for word in words:
+        variants = _expand_term_variants(word)
+        if variants:
+            groups.append(variants)
+    return groups
+
+
+def _group_match(text: str, groups: Sequence[set[str]], mode: str) -> bool:
+    if not groups:
+        return True if mode == "all" else False
+
+    checks = [any(variant in text for variant in variants) for variants in groups]
+    return all(checks) if mode == "all" else any(checks)
 
 
 def _extract_json(text: str) -> Dict[str, List[str]]:
@@ -87,23 +139,30 @@ def run_fast_search(
 ) -> List[dict]:
     """Прямолинейный поиск по AND/OR/NOT‑словам без эмбеддингов. O(N)."""
 
-    # Пред‑нормализация запросных слов для speed‑up
-    and_words = [w.lower() for w in query.get("AND", [])]
-    or_words = [w.lower() for w in query.get("OR", [])]
-    not_words = [w.lower() for w in query.get("NOT", [])]
+    # Пред‑нормализация + расширение терминов синонимами/аббревиатурами
+    and_groups = _expand_query_groups([str(w) for w in query.get("AND", [])])
+    or_groups = _expand_query_groups([str(w) for w in query.get("OR", [])])
+    not_groups = _expand_query_groups([str(w) for w in query.get("NOT", [])])
 
-    found: List[dict] = []
+    ranked: list[tuple[int, dict]] = []
     for chunk in all_chunks:
-        text = chunk.get("text", "").lower()
-        if (
-            all(word in text for word in and_words)
-            and not any(word in text for word in not_words)
-            and (not or_words or any(word in text for word in or_words))
-        ):
-            found.append(chunk)
-            if len(found) >= top_n:
-                break  # 💨 ранний выход
-    return found
+        text = _norm_term(chunk.get("text", ""))
+
+        and_ok = _group_match(text, and_groups, mode="all")
+        not_ok = not _group_match(text, not_groups, mode="any") if not_groups else True
+        or_ok = True if not or_groups else _group_match(text, or_groups, mode="any")
+
+        if and_ok and not_ok and or_ok:
+            score = 0
+            score += sum(any(v in text for v in grp) for grp in and_groups) * 4
+            score += sum(any(v in text for v in grp) for grp in or_groups) * 2
+            # boost by sheer graph-term coverage inside chunk
+            coverage = sum(text.count(v) for grp in and_groups + or_groups for v in grp)
+            score += min(coverage, 20)
+            ranked.append((score, chunk))
+
+    ranked.sort(key=lambda x: x[0], reverse=True)
+    return [ch for _, ch in ranked[:top_n]]
 
 
 # ---------------------------------------------------------------------------

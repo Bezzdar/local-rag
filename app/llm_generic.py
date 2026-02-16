@@ -1,18 +1,11 @@
 # llm_generic.py — обёртка вокруг llama.cpp / Ollama HTTP API
-# ---------------------------------------------------------------------------
-# Обновлён 2025‑06‑04 | ChatGPT‑o3 clean‑up
-#   • logging вместо print
-#   • кэшированный requests.Session с retry/back‑off
-#   • безопасный subprocess (без shell=True) для «прогрева»
-#   • простая реализация стриминга (iter_lines)
-#   • type hints + pathlib | PEP 8
-# ---------------------------------------------------------------------------
 from __future__ import annotations
 
+import json
 import logging
-import time
 import subprocess
-from pathlib import Path
+import time
+from functools import lru_cache
 from typing import Generator, Optional
 
 import requests
@@ -20,9 +13,6 @@ from requests.adapters import HTTPAdapter, Retry
 
 LOGGER = logging.getLogger(__name__)
 
-#──────────────────────────────────────────────────────────────────────────────
-# HTTP util ‑‑ единый Session с экспоненциальным back‑off                   ◆
-#──────────────────────────────────────────────────────────────────────────────
 _session: Optional[requests.Session] = None
 
 
@@ -43,9 +33,29 @@ def _get_session() -> requests.Session:
     return _session
 
 
-#──────────────────────────────────────────────────────────────────────────────
-# Public API                                                                 ◆
-#──────────────────────────────────────────────────────────────────────────────
+def _normalize_base_url(server_url: str | None) -> str:
+    raw = (server_url or "http://localhost:8000").strip()
+    if raw.isdigit():
+        raw = f"http://127.0.0.1:{raw}"
+    if not raw.startswith(("http://", "https://")):
+        raw = f"http://{raw}"
+    return raw.rstrip("/")
+
+
+@lru_cache(maxsize=32)
+def _detect_backend(base_url: str) -> str:
+    """Detect backend by probing known health endpoints."""
+    sess = _get_session()
+
+    try:
+        ping = sess.get(base_url + "/api/tags", timeout=2)
+        if ping.status_code == 200:
+            return "ollama"
+    except Exception:
+        pass
+
+    return "llama_cpp"
+
 
 def ask_llm(
     prompt: str,
@@ -57,82 +67,98 @@ def ask_llm(
     stream: bool = False,
     timeout: int = 600,
 ) -> str | Generator[str, None, None]:
-    """Синхронный запрос к llama.cpp / Ollama‑совместимому серверу.
-
-    Args:
-        prompt: Системное/главное сообщение.
-        text: Дополнительный контекст, будет добавлен после двух переводов строки.
-        model: Явное имя модели (если сервер поддерживает переключение model‑параметром).
-        server_url: Базовый URL без `/completion`. По‑умолчанию `http://localhost:8000`.
-        max_tokens: n_predict
-        stream: если *True* — читаем SSE‑поток и отдаём генератор строк.
-        timeout: сокет‑таймаут для запроса (сек).
-    """
-    url = (server_url or "http://localhost:8000").rstrip("/") + "/completion"
+    """Синхронный запрос к llama.cpp / Ollama‑совместимому серверу."""
+    base_url = _normalize_base_url(server_url)
+    backend = _detect_backend(base_url)
 
     full_prompt = prompt.strip()
     if text:
         full_prompt += f"\n\n{text.strip()}\n"
 
-    payload: dict[str, object] = {
-        "prompt": full_prompt,
-        "n_predict": max_tokens,
-        "stream": stream,
-    }
-    if model:
-        payload["model"] = model
-
-    LOGGER.debug("POST %s", url)
-    start = time.perf_counter()
     sess = _get_session()
+    start = time.perf_counter()
 
     try:
+        if backend == "ollama":
+            url = base_url + "/api/generate"
+            payload: dict[str, object] = {
+                "model": model or "llama3.1:8b",
+                "prompt": full_prompt,
+                "stream": stream,
+                "options": {"num_predict": max_tokens},
+            }
+            if stream:
+                resp = sess.post(url, json=payload, timeout=timeout, stream=True)
+                resp.raise_for_status()
+                LOGGER.info("Ollama streaming started in %.2fs", time.perf_counter() - start)
+                return _iter_ollama_stream(resp)
+
+            resp = sess.post(url, json=payload, timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            answer = data.get("response", "")
+            LOGGER.info("Ollama answered in %.2fs (len=%d)", time.perf_counter() - start, len(answer))
+            return answer
+
+        url = base_url + "/completion"
+        payload = {
+            "prompt": full_prompt,
+            "n_predict": max_tokens,
+            "stream": stream,
+        }
+        if model:
+            payload["model"] = model
+
         if stream:
             resp = sess.post(url, json=payload, timeout=timeout, stream=True)
             resp.raise_for_status()
-            LOGGER.info("Streaming response started in %.2fs", time.perf_counter() - start)
-            return _iter_llm_stream(resp)
-        else:
-            resp = sess.post(url, json=payload, timeout=timeout)
-            elapsed = time.perf_counter() - start
-            resp.raise_for_status()
-            data = resp.json()
-            answer = data.get("content") or data.get("response") or ""
-            LOGGER.info("LLM answered in %.2fs (len=%d)", elapsed, len(answer))
-            return answer
+            LOGGER.info("llama.cpp streaming started in %.2fs", time.perf_counter() - start)
+            return _iter_llama_cpp_stream(resp)
+
+        resp = sess.post(url, json=payload, timeout=timeout)
+        resp.raise_for_status()
+        data = resp.json()
+        answer = data.get("content") or data.get("response") or ""
+        LOGGER.info("llama.cpp answered in %.2fs (len=%d)", time.perf_counter() - start, len(answer))
+        return answer
 
     except requests.exceptions.ReadTimeout:
         return "❌ Timeout: Модель не ответила за %d сек." % timeout
     except requests.exceptions.ConnectionError:
-        return f"❌ Ошибка подключения: не удалось связаться с Llama.cpp на {url}"
+        return f"❌ Ошибка подключения: не удалось связаться с LLM сервером на {base_url}"
     except Exception as exc:  # noqa: BLE001
-        return f"❌ Ошибка при обращении к Llama.cpp: {exc}"
+        return f"❌ Ошибка при обращении к LLM: {exc}"
 
 
-#──────────────────────────────────────────────────────────────────────────────
-# Helpers                                                                    ◆
-#──────────────────────────────────────────────────────────────────────────────
-
-def _iter_llm_stream(resp: requests.Response) -> Generator[str, None, None]:
-    """Построчный итератор по SSE‑потоку из llama.cpp."""
-    buffer: list[str] = []
-    for line in resp.iter_lines(decode_unicode=True):
+def _iter_llama_cpp_stream(resp: requests.Response) -> Generator[str, None, None]:
+    """Yield chunks for llama.cpp SSE stream (data: ... lines)."""
+    for raw in resp.iter_lines(decode_unicode=True):
+        line = (raw or "").strip()
         if not line:
-            continue  # ping
+            continue
         if line.startswith("data: "):
             chunk = line.removeprefix("data: ")
             if chunk == "[DONE]":
                 break
-            buffer.append(chunk)
             yield chunk
-    # на случай, если вы хотели агрегированный текст
-    if buffer:
-        LOGGER.debug("Streaming finished (%d chunks)", len(buffer))
 
 
-#──────────────────────────────────────────────────────────────────────────────
-# Utility: модель‑прогрев                                                    ◆
-#──────────────────────────────────────────────────────────────────────────────
+def _iter_ollama_stream(resp: requests.Response) -> Generator[str, None, None]:
+    """Yield chunks for Ollama NDJSON stream."""
+    for raw in resp.iter_lines(decode_unicode=True):
+        line = (raw or "").strip()
+        if not line:
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        token = item.get("response", "")
+        if token:
+            yield token
+        if item.get("done"):
+            break
+
 
 def warmup_model(model_name: str) -> None:
     """Запускает Ollama модель в отдельном фоне, чтобы она загрузилась в память."""

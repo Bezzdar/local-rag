@@ -96,11 +96,9 @@ def _sentences(text: str) -> List[str]:
 # ---------------------------------------------------------------------------
 
 def _adaptive_chunk_size(sentences: List[str], tokens_target: int = 512) -> int:
-    import nltk
-
-    nltk.download("punkt", quiet=True)
-    lens = [len(nltk.word_tokenize(s)) for s in sentences]
-    avg = np.mean(lens) if lens else 10
+    """Estimate sentence-per-chunk without runtime downloads/dependencies."""
+    token_lens = [max(1, len(re.findall(r"\w+", s, flags=re.UNICODE))) for s in sentences]
+    avg = np.mean(token_lens) if token_lens else 10
     return max(1, int(tokens_target / avg))
 
 
@@ -137,16 +135,16 @@ def _is_duplicate(chunk: str, fingerprints: Set[int], threshold: int = 3) -> boo
 def _extract_pdf_pages(path: Path) -> List[str]:
     import fitz  # PyMuPDF
 
-    pages: List[str] = []
     with fitz.open(path) as doc:
+        pages: list[str] = [""] * doc.page_count
         with _fut.ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as exe:
             futs = {
                 exe.submit(lambda p: doc.load_page(p).get_text("text"), i): i
                 for i in range(doc.page_count)
             }
-            for f in _fut.as_completed(futs):
-                pages.append(_clean(f.result()))
-    pages.sort(key=lambda x: x[:10])
+            for future in _fut.as_completed(futs):
+                page_idx = futs[future]
+                pages[page_idx] = _clean(future.result())
     return pages
 
 

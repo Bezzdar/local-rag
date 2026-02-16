@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import OrderedDict
 from functools import lru_cache
 from typing import List, Tuple
 
@@ -38,15 +39,28 @@ def _get_sentence_model(model_name: str = "all-MiniLM-L6-v2") -> SentenceTransfo
     logger.info("SentenceTransformer '%s' loaded in %.2f s", model_name, time.perf_counter() - t0)
     return model
 
-@lru_cache(maxsize=8)
-def _get_tfidf_matrix(texts_hash: int) -> tuple[TfidfVectorizer, np.ndarray]:
-    """Возвращает (vectorizer, tfidf_matrix) для заданного корпуса.
-    texts_hash — это hash(tuple(texts)); используем как ключ, чтобы
-    не хранить сами тексты в lru_cache и не раздувать память.
-    """
-    # NOTE: Функция вызывается ТОЛЬКО внутри tfidf_search, где мы заранее
-    # гарантируем, что хэш соответствует *текущему* списку текстов.
-    raise RuntimeError("_get_tfidf_matrix должен быть переопределён в tfidf_search")
+_TFIDF_CACHE: "OrderedDict[int, tuple[TfidfVectorizer, np.ndarray]]" = OrderedDict()
+_TFIDF_CACHE_SIZE = 8
+
+
+def _get_tfidf_matrix_cached(texts_tuple: tuple[str, ...]) -> tuple[TfidfVectorizer, np.ndarray]:
+    """Return cached TF‑IDF matrix for corpus, rebuilding if missing."""
+    key = hash(texts_tuple)
+    cached = _TFIDF_CACHE.get(key)
+    if cached is not None:
+        _TFIDF_CACHE.move_to_end(key)
+        return cached
+
+    vectorizer = TfidfVectorizer()
+    tfidf_matrix = vectorizer.fit_transform(texts_tuple)
+    _TFIDF_CACHE[key] = (vectorizer, tfidf_matrix)
+    _TFIDF_CACHE.move_to_end(key)
+
+    if len(_TFIDF_CACHE) > _TFIDF_CACHE_SIZE:
+        _TFIDF_CACHE.popitem(last=False)
+
+    logger.debug("TF‑IDF matrix cached for corpus of %d docs", len(texts_tuple))
+    return vectorizer, tfidf_matrix
 
 # ---------------------------------------------------------------------------
 # 2. TF‑IDF поиск
@@ -61,19 +75,7 @@ def tfidf_search(texts: List[str], query: str, top_k: int = 5) -> List[Tuple[int
         return []
 
     texts_tuple = tuple(texts)
-    key = hash(texts_tuple)
-
-    # Переопределяем _get_tfidf_matrix под наш корпус, если его ещё нет
-    if not _get_tfidf_matrix.cache_info().hits and not _get_tfidf_matrix.cache_info().misses:
-        pass  # первый вызов — кеш пуст, но функция ещё не переопределена
-    if key not in _get_tfidf_matrix.cache:
-        vectorizer = TfidfVectorizer()
-        tfidf_matrix = vectorizer.fit_transform(texts_tuple)
-        # Хак: инжектируем результат в кеш вручную (обход ограничений lru_cache)
-        _get_tfidf_matrix.cache[key] = (vectorizer, tfidf_matrix)
-        logger.debug("TF‑IDF matrix cached for corpus of %d docs", len(texts_tuple))
-
-    vectorizer, tfidf_matrix = _get_tfidf_matrix.cache[key]
+    vectorizer, tfidf_matrix = _get_tfidf_matrix_cached(texts_tuple)
     query_vec = vectorizer.transform([query])
     sims = cosine_similarity(query_vec, tfidf_matrix).ravel()
     top_idx = np.argsort(sims)[::-1][:top_k]
