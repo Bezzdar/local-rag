@@ -1,3 +1,5 @@
+import { getRuntimeConfig } from '@/lib/runtime-config';
+
 export type ChatMode = 'qa' | 'draft' | 'table' | 'summarize';
 
 export type StreamHandlers = {
@@ -6,8 +8,6 @@ export type StreamHandlers = {
   onDone: (messageId: string) => void;
   onError: (error: Error) => void;
 };
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000';
 
 export function openChatStream(params: {
   notebookId: string;
@@ -21,9 +21,12 @@ export function openChatStream(params: {
     message: params.message,
     mode: params.mode,
     selected_source_ids: params.selectedSourceIds.join(','),
+    provider: getRuntimeConfig().llmProvider,
+    model: getRuntimeConfig().llmModel,
   });
 
-  const eventSource = new EventSource(`${API_BASE}/api/chat/stream?${search.toString()}`);
+  const { apiBase } = getRuntimeConfig();
+  const eventSource = new EventSource(`${apiBase}/api/chat/stream?${search.toString()}`);
   eventSource.addEventListener('token', (event) => {
     const text = JSON.parse((event as MessageEvent).data).text as string;
     params.handlers.onToken(text);

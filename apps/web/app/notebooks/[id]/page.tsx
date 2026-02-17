@@ -2,6 +2,7 @@
 
 import ChatPanel from '@/components/ChatPanel';
 import EvidencePanel from '@/components/EvidencePanel';
+import RuntimeSettings from '@/components/RuntimeSettings';
 import SourcesPanel from '@/components/SourcesPanel';
 import { api, CitationsSchema } from '@/lib/api';
 import { ChatMode, openChatStream } from '@/lib/sse';
@@ -79,33 +80,36 @@ export default function NotebookWorkspacePage() {
   }
 
   return (
-    <div className="min-h-screen lg:h-screen lg:flex">
-      <SourcesPanel
-        notebooks={notebooks.data}
-        activeNotebookId={notebookId}
-        sources={sources.data}
-        selectedSourceIds={selectedSourceIds}
-        onNotebookChange={(id) => router.push(`/notebooks/${id}`)}
-        onCreateNotebook={(title) => createNotebook.mutate(title)}
-        onToggleSource={(sourceId) =>
-          setExplicitSelection((current) =>
-            current.includes(sourceId) ? current.filter((id) => id !== sourceId) : [...current, sourceId],
-          )
-        }
-        onUpload={(file) => uploadSource.mutate(file)}
-      />
+    <div className="min-h-screen p-3 lg:h-screen">
+      <RuntimeSettings />
+      <div className="mt-3 lg:flex lg:h-[calc(100%-84px)]">
+        <SourcesPanel
+          notebooks={notebooks.data}
+          activeNotebookId={notebookId}
+          sources={sources.data}
+          selectedSourceIds={selectedSourceIds}
+          onNotebookChange={(id) => router.push(`/notebooks/${id}`)}
+          onCreateNotebook={(title) => createNotebook.mutate(title)}
+          onToggleSource={(sourceId) =>
+            setExplicitSelection((current) =>
+              current.includes(sourceId) ? current.filter((id) => id !== sourceId) : [...current, sourceId],
+            )
+          }
+          onUpload={(file) => uploadSource.mutate(file)}
+        />
 
-      <ChatPanel
-        mode={mode}
-        messages={messages.data}
-        streaming={streaming}
-        citations={citations}
-        onModeChange={setMode}
-        onSend={sendMessage}
-        onSaveToNotes={(content) => createNote.mutate({ title: 'Из чата', content })}
-      />
+        <ChatPanel
+          mode={mode}
+          messages={messages.data}
+          streaming={streaming}
+          citations={citations}
+          onModeChange={setMode}
+          onSend={sendMessage}
+          onSaveToNotes={(content) => createNote.mutate({ title: 'Из чата', content })}
+        />
 
-      <EvidencePanel citations={citations} notes={notes.data} sources={sources.data} />
+        <EvidencePanel citations={citations} notes={notes.data} sources={sources.data} />
+      </div>
     </div>
   );
 }
