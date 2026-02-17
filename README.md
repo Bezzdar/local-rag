@@ -35,6 +35,114 @@
 
 ---
 
+## Установка и запуск на Windows (рекомендуемый сценарий)
+
+Ниже — основной путь развёртывания под Windows 10/11, т.к. проект в первую очередь ориентирован на эту ОС.
+
+### 1) Требования
+
+- **Python 3.10+** (рекомендуется 3.11), установленный с опцией `Add python.exe to PATH`.
+- **Node.js 20 LTS** (для `apps/web`).
+- **Git for Windows**.
+- **Microsoft Visual C++ Redistributable 2015-2022** (часто нужен для Python-пакетов).
+
+Проверка в `PowerShell`:
+
+```powershell
+python --version
+pip --version
+node --version
+npm --version
+git --version
+```
+
+### 2) Клонирование репозитория
+
+```powershell
+git clone <URL_ВАШЕГО_РЕПО>
+cd RAG
+```
+
+### 3) Настройка backend (FastAPI) на Windows
+
+#### Вариант A (рекомендуется, вручную через `.venv`)
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r apps/api/requirements.txt
+```
+
+Если PowerShell блокирует активацию скриптов:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+#### Вариант B (legacy, через `.bat`-скрипт)
+
+Для Streamlit-сценария в корне есть автоматизация:
+
+```bat
+setup_venv.bat
+start_app.bat
+```
+
+> Этот путь использует `requirements.txt` в корне и запускает `streamlit_app.py`.
+
+### 4) Запуск backend API
+
+Из корня репозитория (с активированным `.venv`):
+
+```powershell
+uvicorn apps.api.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Проверка, что API поднялся:
+
+- Swagger UI: http://127.0.0.1:8000/docs
+- Health endpoint: http://127.0.0.1:8000/api/health
+
+### 5) Настройка и запуск frontend (Next.js)
+
+Откройте **второй** терминал в корне репозитория:
+
+```powershell
+cd apps/web
+npm install
+Copy-Item ..\..\.env.example .env.local
+npm run dev
+```
+
+После запуска web обычно доступен на:
+
+- http://localhost:3000
+
+### 6) Быстрая проверка после запуска
+
+1. Откройте web-интерфейс.
+2. Создайте/выберите notebook.
+3. Загрузите PDF/DOCX/XLSX.
+4. Дождитесь статуса `indexed`.
+5. Отправьте вопрос в чат и проверьте citations справа.
+
+### 7) Типовые проблемы на Windows
+
+- **`python` не найден**
+  - Переустановите Python с опцией `Add to PATH`.
+- **Ошибка активации `.venv` в PowerShell**
+  - Используйте `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`.
+- **`npm install` даёт 403/timeout в корпоративной сети**
+  - Пропишите внутренний registry:
+    ```powershell
+    npm config set registry https://<your-corp-npm-registry>/
+    ```
+- **`pip install` блокируется proxy/403**
+  - Используйте корпоративный PyPI (`PIP_INDEX_URL`) или офлайн-колёса (см. раздел ниже).
+
+---
+
 ## Quick Start (API)
 
 ### Online install
@@ -166,4 +274,3 @@ make smoke    # alias to verify
 1. `make verify`
 2. Проверить `TEST_REPORT.md`
 3. Если web блокирован по npm — сначала поднять внутренний registry/proxy
-
