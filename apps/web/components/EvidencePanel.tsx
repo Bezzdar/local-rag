@@ -20,7 +20,7 @@ export default function EvidencePanel(props: Props) {
   );
 
   return (
-    <aside className="w-full lg:w-96 border-l border-slate-200 bg-white p-4 space-y-3">
+    <aside className="w-full h-full border-l border-slate-200 bg-white p-4 space-y-3">
       <div className="flex gap-2">
         <button
           className={`rounded px-3 py-1 text-sm ${tab === 'citations' ? 'bg-slate-900 text-white' : 'border border-slate-300'}`}

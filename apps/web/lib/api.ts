@@ -19,7 +19,21 @@ export const api = {
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) },
       NotebookSchema,
     ),
+  deleteNotebook: async (notebookId: string) => {
+    const { apiBase } = getRuntimeConfig();
+    const response = await fetch(`${apiBase}/api/notebooks/${notebookId}`, { method: 'DELETE' });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+  },
   listSources: (notebookId: string) => request(`/api/notebooks/${notebookId}/sources`, { method: 'GET' }, z.array(SourceSchema)),
+  deleteSource: async (sourceId: string) => {
+    const { apiBase } = getRuntimeConfig();
+    const response = await fetch(`${apiBase}/api/sources/${sourceId}`, { method: 'DELETE' });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+  },
   uploadSource: async (notebookId: string, file: File) => {
     const { apiBase } = getRuntimeConfig();
     const form = new FormData();

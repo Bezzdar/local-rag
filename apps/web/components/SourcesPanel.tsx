@@ -1,6 +1,7 @@
 'use client';
 
 import { Notebook, Source } from '@/types/dto';
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 type Props = {
@@ -9,13 +10,15 @@ type Props = {
   sources: Source[];
   selectedSourceIds: string[];
   onNotebookChange: (id: string) => void;
-  onCreateNotebook: (title: string) => void;
   onToggleSource: (sourceId: string) => void;
+  onSelectAllSources: () => void;
+  onClearSourceSelection: () => void;
+  onDeleteAllSources: () => void;
+  onDeleteUnselectedSources: () => void;
   onUpload: (file: File) => void;
 };
 
 export default function SourcesPanel(props: Props) {
-  const [newTitle, setNewTitle] = useState('');
   const [search, setSearch] = useState('');
 
   const visibleSources = useMemo(
@@ -24,7 +27,7 @@ export default function SourcesPanel(props: Props) {
   );
 
   return (
-    <aside className="w-full lg:w-80 border-r border-slate-200 bg-white p-4 space-y-4">
+    <aside className="w-full h-full border-r border-slate-200 bg-white p-4 space-y-4">
       <div className="space-y-2">
         <p className="text-xs uppercase tracking-wide text-slate-500">Notebooks</p>
         <select
@@ -38,27 +41,12 @@ export default function SourcesPanel(props: Props) {
         </select>
       </div>
 
-      <div className="flex gap-2">
-        <input
-          className="flex-1 rounded border border-slate-300 p-2 text-sm"
-          placeholder="New notebook"
-          value={newTitle}
-          onChange={(event) => setNewTitle(event.target.value)}
-        />
-        <button
-          className="rounded bg-slate-900 px-3 text-white"
-          onClick={() => {
-            const title = newTitle.trim();
-            if (!title) {
-              return;
-            }
-            props.onCreateNotebook(title);
-            setNewTitle('');
-          }}
-        >
-          +
-        </button>
-      </div>
+      <Link
+        href="/notebooks"
+        className="block rounded border border-slate-300 p-2 text-center text-sm text-slate-700 hover:bg-slate-50"
+      >
+        На главную страницу
+      </Link>
 
       <div className="space-y-2">
         <input
@@ -81,6 +69,31 @@ export default function SourcesPanel(props: Props) {
             }}
           />
         </label>
+      </div>
+
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" className="rounded border border-slate-300 px-2 py-1 text-xs" onClick={props.onSelectAllSources}>
+            Выделить все
+          </button>
+          <button type="button" className="rounded border border-slate-300 px-2 py-1 text-xs" onClick={props.onClearSourceSelection}>
+            Снять выделение
+          </button>
+          <button
+            type="button"
+            className="rounded border border-red-200 px-2 py-1 text-xs text-red-600"
+            onClick={props.onDeleteAllSources}
+          >
+            Удалить все
+          </button>
+          <button
+            type="button"
+            className="rounded border border-red-200 px-2 py-1 text-xs text-red-600"
+            onClick={props.onDeleteUnselectedSources}
+          >
+            Удалить невыбранные
+          </button>
+        </div>
       </div>
 
       <div className="space-y-2 max-h-[55vh] overflow-auto">
