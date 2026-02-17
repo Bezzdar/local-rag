@@ -19,6 +19,16 @@ app.include_router(chat.router)
 app.include_router(notes.router)
 
 
+@app.get("/")
+def root() -> dict[str, str]:
+    return {
+        "name": "Local RAG Assistant API",
+        "docs": "/docs",
+        "health": "/api/health",
+    }
+
+
 @app.get("/health")
+@app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}

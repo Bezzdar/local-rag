@@ -112,7 +112,11 @@ def list_sources(notebook_id: str) -> list[Source]:
 @router.post("/notebooks/{notebook_id}/sources/upload", response_model=Source)
 async def upload_source(notebook_id: str, request: Request) -> Source:
     if HAS_MULTIPART and not _force_fallback():
-        form = await request.form()
+        try:
+            form = await request.form()
+        except Exception as exc:  # malformed multipart payload
+            raise HTTPException(status_code=400, detail="Malformed multipart payload") from exc
+
         file = form.get("file")
         if not isinstance(file, StarletteUploadFile):
             raise HTTPException(status_code=400, detail="Multipart file field 'file' not found")
