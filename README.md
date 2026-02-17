@@ -35,6 +35,170 @@
 
 ---
 
+## Полная инвентаризация проекта (актуализировано)
+
+Ниже описана **фактическая структура репозитория**, роли модулей и рабочий процесс RAG-контура.
+
+### 1) Карта репозитория
+
+### Корневой уровень
+
+- `README.md` — основной технический документ по архитектуре, запуску и верификации.
+- `Makefile` — удобные алиасы (`run-api`, `verify`, `smoke`).
+- `scripts/verify.sh` — end-to-end smoke/verification сценарий (компиляция, pytest, upload, indexing, SSE).
+- `TODO.md`, `TEST_REPORT.md` — рабочие артефакты состояния проекта.
+- `streamlit_app.py` + `app/`, `parsers/` — legacy Streamlit-контур (сохранён для обратной совместимости).
+- `api/`, `web/` — legacy-копии backend/frontend (исторический слой; основной активный контур — в `apps/*`).
+- `data/` — файловое хранилище документов и индексов.
+
+### Основной runtime-контур (активный)
+
+- `apps/api/` — FastAPI backend (основной API-контур):
+  - `main.py` — сборка приложения, CORS, подключение роутеров, health endpoints.
+  - `config.py` — пути к `data/*`, лимиты upload.
+  - `schemas.py` — Pydantic-контракты API.
+  - `store.py` — in-memory state + orchestrator индексации источников.
+  - `routers/`:
+    - `notebooks.py` — CRUD блокнотов и статус индексации.
+    - `sources.py` — загрузка/регистрация источников и выдача файлов.
+    - `chat.py` — chat/sse, формирование citations.
+    - `notes.py` — заметки.
+  - `services/`:
+    - `parse_service.py` — нормализация парсинга + fallback-режимы.
+    - `index_service.py` — сбор и хранение индексированных блоков, optional legacy indexing trigger.
+    - `search_service.py` — retrieval по индексированным чанкам.
+  - `tests/` — API smoke/integration тесты.
+
+- `apps/web/` — Next.js frontend:
+  - `app/notebooks/[id]/page.tsx` — основная рабочая зона (sources/chat/evidence).
+  - `components/` — UI-панели (`SourcesPanel`, `ChatPanel`, `EvidencePanel`, `RuntimeSettings`, `DocPreview`).
+  - `lib/api.ts` — клиент API + zod-валидация DTO.
+  - `lib/sse.ts` — SSE-клиент поточного ответа.
+  - `types/dto.ts` — типы фронтового контракта.
+
+### Ядро обработки документов
+
+- `packages/rag_core/` — вынесенное legacy-ядро обработки:
+  - `parsers/text_extraction.py` — извлечение текста, секционирование, семантическое chunking API.
+  - `parsers/preprocessing.py`, `parsers/ner_extraction.py` — вспомогательная предобработка/NER.
+  - `app/engine.py` — pipeline индексации в Chroma.
+  - `app/chunk_manager.py` — parent/child chunking, chunk storage helpers.
+  - `app/search_tools.py` — TF-IDF + semantic rerank утилиты.
+  - прочие модули (`search_engine.py`, `term_graph.py`, и т.д.) — расширения retrieval/аналитики.
+
+### Данные и артефакты
+
+- `data/docs/<notebook_id>/` — физические загруженные файлы.
+- `data/index/` — persistent index storage (в т.ч. Chroma для legacy-контура).
+- `data/chunks/` — JSON-артефакты чанков.
+
+---
+
+### 2) Сквозной рабочий процесс (от загрузки файла до ответа)
+
+Ниже — **последовательность исполнения** для текущего активного контура `apps/api + apps/web`.
+
+1. Пользователь загружает файл во frontend (`SourcesPanel`), фронт вызывает:
+   - `POST /api/notebooks/{id}/sources/upload` (multipart).
+2. Backend (`sources.py`) сохраняет файл в `data/docs/<notebook_id>/<uuid>-<filename>`.
+3. `store.add_source_from_path(...)` создаёт `Source` со статусом `indexing` и запускает фоновой поток индексации.
+4. Фоновая индексация вызывает `index_service.index_source(...)`:
+   - выполняется `parse_service.extract_blocks(path)`;
+   - блоки приводятся к унифицированному контракту (`source_id`, `page`, `section_id`, `section_title`, `text`, `type`);
+   - блоки сохраняются в in-memory `INDEXED_BLOCKS[notebook_id]`.
+5. После успеха статус источника переводится в `indexed` (или `failed` при ошибке).
+6. Пользователь отправляет вопрос, frontend открывает `GET /api/chat/stream?...`.
+7. `chat_stream` вызывает retrieval `search_service.search(...)`:
+   - фильтрация по выбранным source ids;
+   - ранжирование по текущему алгоритму;
+   - top-N чанков преобразуются в citations.
+8. Ответ формируется шаблонно (`_build_answer`) и отдаётся как SSE-события:
+   - `token` (поток текста), затем `citations`, затем `done`.
+9. Фронт отображает поток ответа, а справа — evidence/citations.
+
+---
+
+### 3) Последовательности парсинга и чанкинга
+
+## 3.1 Активный API-путь (`apps/api/services/parse_service.py`)
+
+Текущая боевая ветка ориентирована на устойчивость и предсказуемость:
+
+1. Проверка расширения: поддерживаются `.pdf/.docx/.xlsx/.txt/.log/.doc`.
+2. Для `.pdf/.docx/.xlsx` используется **быстрый fallback-блок** (placeholder extraction), чтобы не ломать ingest в окружениях без тяжёлых парсеров.
+3. Для `.txt/.log/.doc` и прочих разрешённых вариантов — попытка полноценного `rag_core.parsers.text_extraction.extract_blocks`.
+4. При исключении — fallback-блок с техническим описанием причины.
+
+Результат: API всегда возвращает хотя бы один нормализованный блок и может завершить индексацию, даже в деградированном режиме.
+
+## 3.2 Полный parser/chunking pipeline (`packages/rag_core/parsers/text_extraction.py`)
+
+Когда используется полноценное извлечение, цепочка такая:
+
+1. **Извлечение текста** по формату:
+   - PDF: `PyMuPDF (fitz)`, постранично, параллельная выборка страниц.
+   - DOCX/DOC: `python-docx`, включая таблицы (в markdown-подобное представление).
+   - TXT/LOG: прямое чтение.
+2. **Очистка текста**:
+   - удаление непечатаемых символов,
+   - нормализация пробелов/переносов.
+3. **Удаление повторяющегося page-noise** (headers/footers):
+   - линии, повторяющиеся на значимой доле страниц, вырезаются.
+4. **Секционирование**:
+   - эвристика заголовков (`1.2 ...`, `РАЗДЕЛ ...`, upper headings),
+   - формируются пары `(section_title, section_text)` и `section_id` вида `p{page}.s{n}`.
+5. Опционально: **TextRank boundaries** (sumy), если включён режим `use_textrank`.
+
+## 3.3 Семантический чанкинг (`packages/rag_core/app/chunk_manager.py`)
+
+Для legacy-индексации в Chroma используется двухуровневое дробление:
+
+1. Внутри блока: `_split_technical_sections(...)` по техзаголовкам.
+2. Формируются **parent chunks** (крупные контекстные окна, `_PARENT_MAX_LEN`).
+3. Для каждого parent формируются **child chunks** (`_CHILD_MAX_LEN`) с overlap по предложениям.
+4. Между child и parent сохраняется связь через `parent_id`.
+
+Это даёт компромисс между полнотой контекста (parent) и точностью retrieval (child).
+
+---
+
+### 4) Какие алгоритмы используются
+
+В проекте одновременно присутствуют алгоритмы **активного** и **legacy** контура.
+
+### Активный контур (`apps/api`)
+
+- Retrieval ранжирование: упрощённый keyword-подход
+  - токенизация регуляркой (`[\w\-]+`),
+  - базовая AND-группа,
+  - fallback сортировка по наличию подстроки + длине чанка.
+- Генерация ответа: template-based (без LLM-генерации по умолчанию).
+- Стриминг: SSE (`token -> citations -> done`).
+
+### Legacy / расширенный контур (`packages/rag_core`)
+
+- TF-IDF retrieval (`sklearn` cosine similarity).
+- Semantic rerank через `SentenceTransformer` эмбеддинги (cosine в embedding space).
+- Simhash near-duplicate filtering при chunking.
+- Adaptive chunk sizing по средней длине предложения.
+- TextRank для выделения смысловых границ (при наличии sumy).
+- Индексация в Chroma с метаданными (`file_path`, `page_label`, `section_id`, `term_tags`, `parent_id`).
+
+---
+
+### 5) Роли ключевых файлов (быстрый справочник)
+
+- `apps/api/store.py` — единая точка управления жизненным циклом notebook/source/message/note и фоновой индексацией.
+- `apps/api/services/index_service.py` — конвертация parser blocks в индексируемые блоки notebook-level.
+- `apps/api/services/search_service.py` — retrieval + преобразование chunk -> citation fields.
+- `packages/rag_core/parsers/text_extraction.py` — «источник истины» по извлечению/нормализации/секции текста.
+- `packages/rag_core/app/chunk_manager.py` — управляет структурным семантическим чанкингом (parent/child).
+- `packages/rag_core/app/engine.py` — end-to-end legacy индексатор (extract -> chunk -> embed -> chroma).
+- `apps/web/app/notebooks/[id]/page.tsx` — orchestration UI workflow (queries/mutations/SSE).
+- `apps/web/lib/api.ts`, `apps/web/lib/sse.ts` — transport слой frontend.
+
+---
+
 ## Установка и запуск на Windows (рекомендуемый сценарий)
 
 Ниже — основной путь развёртывания под Windows 10/11, т.к. проект в первую очередь ориентирован на эту ОС.
