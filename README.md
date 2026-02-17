@@ -13,7 +13,7 @@
 - `packages/rag_core/app/*`
 - `packages/rag_core/parsers/*`
 
-Оригинальные `app/` и `parsers/` в корне сохранены.
+Корневые legacy-копии удалены; актуальный runtime находится в `apps/*`, а библиотечное ядро — в `packages/rag_core`.
 
 ## What is real vs mock
 
@@ -47,8 +47,8 @@
 - `Makefile` — удобные алиасы (`run-api`, `verify`, `smoke`).
 - `scripts/verify.sh` — end-to-end smoke/verification сценарий (компиляция, pytest, upload, indexing, SSE).
 - `TODO.md`, `TEST_REPORT.md` — рабочие артефакты состояния проекта.
-- `streamlit_app.py` + `app/`, `parsers/` — legacy Streamlit-контур (сохранён для обратной совместимости).
-- `api/`, `web/` — legacy-копии backend/frontend (исторический слой; основной активный контур — в `apps/*`).
+- `apps/` — прикладные сервисы проекта (активный backend и frontend).
+- `packages/` — библиотечные компоненты и обработка документов.
 - `data/` — файловое хранилище документов и индексов.
 
 ### Основной runtime-контур (активный)
@@ -244,16 +244,6 @@ pip install -r apps/api/requirements.txt
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
-#### Вариант B (legacy, через `.bat`-скрипт)
-
-Для Streamlit-сценария в корне есть автоматизация:
-
-```bat
-setup_venv.bat
-start_app.bat
-```
-
-> Этот путь использует `requirements.txt` в корне и запускает `streamlit_app.py`.
 
 ### 4) Запуск backend API
 
