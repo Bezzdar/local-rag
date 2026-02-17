@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
@@ -112,7 +112,11 @@ def list_sources(notebook_id: str) -> list[Source]:
 @router.post("/notebooks/{notebook_id}/sources/upload", response_model=Source)
 async def upload_source(notebook_id: str, request: Request) -> Source:
     if HAS_MULTIPART and not _force_fallback():
-        form = await request.form()
+        try:
+            form = await request.form()
+        except Exception as exc:  # malformed multipart payload
+            raise HTTPException(status_code=400, detail="Malformed multipart payload") from exc
+
         file = form.get("file")
         if not isinstance(file, StarletteUploadFile):
             raise HTTPException(status_code=400, detail="Multipart file field 'file' not found")
@@ -128,11 +132,12 @@ def add_path(notebook_id: str, payload: AddPathRequest) -> Source:
     return store.add_source_from_path(notebook_id, payload.path)
 
 
-@router.delete("/sources/{source_id}", status_code=204)
-def delete_source(source_id: str) -> None:
+@router.delete("/sources/{source_id}", status_code=204, response_class=Response)
+def delete_source(source_id: str) -> Response:
     if source_id not in store.sources:
         raise HTTPException(status_code=404, detail="Source not found")
     store.sources.pop(source_id)
+    return Response(status_code=204)
 
 
 @router.get("/files")
