@@ -19,6 +19,11 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Node.js artifacts
+node_modules/
+apps/web/.next/
+apps/web/out/
+
 # Runtime outputs and logs
 *.log
 logs/
@@ -26,6 +31,13 @@ logs/
 # Local runtime data (generated indexes/chunks)
 data/index/
 data/chunks/
+
+# Generated uploaded docs from local tests/smoke runs
+data/docs/**
+!data/docs/
+!data/docs/00000000-0000-0000-0000-000000000001/
+!data/docs/00000000-0000-0000-0000-000000000001/sample-1.txt
+!data/docs/00000000-0000-0000-0000-000000000001/sample-2.txt
 
 # Streamlit runtime
 .streamlit/secrets.toml
