@@ -26,6 +26,17 @@ def get_notebook_blocks(notebook_id: str) -> list[dict[str, Any]]:
     return INDEXED_BLOCKS.get(notebook_id, [])
 
 
+def remove_source_blocks(notebook_id: str, source_id: str) -> None:
+    notebook_blocks = INDEXED_BLOCKS.get(notebook_id)
+    if not notebook_blocks:
+        return
+    INDEXED_BLOCKS[notebook_id] = [item for item in notebook_blocks if item.get("source_id") != source_id]
+
+
+def clear_notebook_blocks(notebook_id: str) -> None:
+    INDEXED_BLOCKS.pop(notebook_id, None)
+
+
 async def index_source(notebook_id: str, source_id: str, file_path: str) -> list[dict[str, Any]]:
     """Parse and index one file; optional legacy engine run behind feature flag."""
     path = Path(file_path)

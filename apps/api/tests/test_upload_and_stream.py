@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from apps.api.config import UPLOAD_MAX_BYTES
 from apps.api.main import app
 from apps.api.config import DOCS_DIR
+from apps.api.services.index_service import get_notebook_blocks
 
 client = TestClient(app)
 
@@ -166,3 +167,37 @@ def test_force_fallback_small_upload_works() -> None:
             os.environ.pop('FORCE_FALLBACK_MULTIPART', None)
         else:
             os.environ['FORCE_FALLBACK_MULTIPART'] = previous
+
+
+def test_delete_source_removes_file_and_index_blocks() -> None:
+    notebook_id = _first_notebook_id()
+    upload = client.post(
+        f'/api/notebooks/{notebook_id}/sources/upload',
+        files={'file': ('cleanup.txt', b'cleanup-content', 'text/plain')},
+    )
+    assert upload.status_code == 200
+    source = upload.json()
+
+    _wait_source_status(source['id'], 'indexed')
+    assert any(item.get('source_id') == source['id'] for item in get_notebook_blocks(notebook_id))
+
+    delete = client.delete(f"/api/sources/{source['id']}")
+    assert delete.status_code == 204
+
+    assert not Path(source['file_path']).exists()
+    assert all(item.get('source_id') != source['id'] for item in get_notebook_blocks(notebook_id))
+
+
+def test_sources_endpoints_for_unknown_notebook_return_404() -> None:
+    missing = '00000000-0000-0000-0000-000000000099'
+    listing = client.get(f'/api/notebooks/{missing}/sources')
+    assert listing.status_code == 404
+
+    upload = client.post(
+        f'/api/notebooks/{missing}/sources/upload',
+        files={'file': ('sample.txt', b'text', 'text/plain')},
+    )
+    assert upload.status_code == 404
+
+    add_path = client.post(f'/api/notebooks/{missing}/sources/add-path', json={'path': '/tmp/file.txt'})
+    assert add_path.status_code == 404

@@ -11,6 +11,7 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from ..config import DOCS_DIR, UPLOAD_MAX_BYTES
 from ..schemas import AddPathRequest, Source
+from ..services.index_service import remove_source_blocks
 from ..store import store
 
 router = APIRouter(prefix="/api", tags=["sources"])
@@ -34,6 +35,11 @@ def _extract_filename(headers: str) -> str:
 
 def _force_fallback() -> bool:
     return os.getenv("FORCE_FALLBACK_MULTIPART", "0") == "1"
+
+
+def _ensure_notebook_exists(notebook_id: str) -> None:
+    if notebook_id not in store.notebooks:
+        raise HTTPException(status_code=404, detail="Notebook not found")
 
 
 async def _persist_content(notebook_id: str, filename: str, content: bytes) -> Source:
@@ -106,11 +112,13 @@ async def _save_multipart_file_stream(request: Request, notebook_id: str) -> tup
 
 @router.get("/notebooks/{notebook_id}/sources", response_model=list[Source])
 def list_sources(notebook_id: str) -> list[Source]:
+    _ensure_notebook_exists(notebook_id)
     return [source for source in store.sources.values() if source.notebook_id == notebook_id]
 
 
 @router.post("/notebooks/{notebook_id}/sources/upload", response_model=Source)
 async def upload_source(notebook_id: str, request: Request) -> Source:
+    _ensure_notebook_exists(notebook_id)
     if HAS_MULTIPART and not _force_fallback():
         try:
             form = await request.form()
@@ -129,14 +137,22 @@ async def upload_source(notebook_id: str, request: Request) -> Source:
 
 @router.post("/notebooks/{notebook_id}/sources/add-path", response_model=Source)
 def add_path(notebook_id: str, payload: AddPathRequest) -> Source:
+    _ensure_notebook_exists(notebook_id)
     return store.add_source_from_path(notebook_id, payload.path)
 
 
 @router.delete("/sources/{source_id}", status_code=204, response_class=Response)
 def delete_source(source_id: str) -> Response:
-    if source_id not in store.sources:
+    source = store.sources.get(source_id)
+    if not source:
         raise HTTPException(status_code=404, detail="Source not found")
-    store.sources.pop(source_id)
+
+    path = Path(source.file_path)
+    if path.exists() and path.is_file():
+        path.unlink(missing_ok=True)
+
+    remove_source_blocks(source.notebook_id, source_id)
+    store.sources.pop(source_id, None)
     return Response(status_code=204)
 
 

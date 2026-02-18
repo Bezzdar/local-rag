@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from .config import CHUNKS_DIR, DOCS_DIR, INDEX_DIR
 from .schemas import ChatMessage, Note, Notebook, Source, now_iso
-from .services.index_service import index_source
+from .services.index_service import clear_notebook_blocks, index_source
 
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
 INDEX_DIR.mkdir(parents=True, exist_ok=True)
@@ -86,6 +86,7 @@ class InMemoryStore:
         del self.notebooks[notebook_id]
         self.messages.pop(notebook_id, None)
         self.notes.pop(notebook_id, None)
+        clear_notebook_blocks(notebook_id)
         return True
 
     def add_source_from_path(self, notebook_id: str, path: str, indexed: bool = False) -> Source:
