@@ -1,6 +1,12 @@
 import { getRuntimeConfig } from '@/lib/runtime-config';
 
-export type ChatMode = 'qa' | 'draft' | 'table' | 'summarize';
+export type ChatMode = 'model' | 'agent' | 'rag';
+
+export const CHAT_MODE_OPTIONS: Array<{ value: ChatMode; label: string }> = [
+  { value: 'model', label: 'Модель' },
+  { value: 'agent', label: 'Агент' },
+  { value: 'rag', label: 'RAG' },
+];
 
 const apiBase = (process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000').replace(/\/+$/, '');
 

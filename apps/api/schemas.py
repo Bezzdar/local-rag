@@ -64,7 +64,7 @@ class ChatRequest(BaseModel):
     notebook_id: str
     message: str
     selected_source_ids: list[str] = Field(default_factory=list)
-    mode: Literal["qa", "draft", "table", "summarize"]
+    mode: Literal["model", "agent", "rag"]
 
 
 class ChatResponse(BaseModel):

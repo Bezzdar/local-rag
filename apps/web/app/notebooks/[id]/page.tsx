@@ -21,7 +21,7 @@ export default function NotebookWorkspacePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  const [mode, setMode] = useState<ChatMode>('qa');
+  const [mode, setMode] = useState<ChatMode>('rag');
   const [streaming, setStreaming] = useState('');
   const [citations, setCitations] = useState<Citation[]>([]);
   const [explicitSelection, setExplicitSelection] = useState<string[] | null>(null);
@@ -49,6 +49,15 @@ export default function NotebookWorkspacePage() {
   const createNote = useMutation({
     mutationFn: ({ title, content }: { title: string; content: string }) => api.createNote(notebookId, title, content),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notes', notebookId] }),
+  });
+
+  const clearChat = useMutation({
+    mutationFn: () => api.clearMessages(notebookId),
+    onSuccess: () => {
+      setStreaming('');
+      setCitations([]);
+      queryClient.invalidateQueries({ queryKey: ['messages', notebookId] });
+    },
   });
 
   const allSourceIds = useMemo(() => sources.data?.map((source) => source.id) ?? [], [sources.data]);
@@ -194,6 +203,7 @@ export default function NotebookWorkspacePage() {
           citations={citations}
           onModeChange={setMode}
           onSend={sendMessage}
+          onClearChat={() => clearChat.mutate()}
           onSaveToNotes={(content) => createNote.mutate({ title: 'Из чата', content })}
         />
 
