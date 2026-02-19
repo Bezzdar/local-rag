@@ -19,6 +19,9 @@ const DEFAULT_CONFIG: RuntimeConfig = {
   debugModelMode: false,
 };
 
+let runtimeConfigState: RuntimeConfig = DEFAULT_CONFIG;
+let runtimeHydrated = false;
+
 function sanitizeUrl(value: string): string {
   return value.trim().replace(/\/+$/, '');
 }
@@ -43,23 +46,12 @@ export function getRuntimeConfig(): RuntimeConfig {
     return DEFAULT_CONFIG;
   }
 
-  const raw = window.localStorage.getItem(CONFIG_STORAGE_KEY);
-  if (!raw) {
-    return DEFAULT_CONFIG;
+  if (!runtimeHydrated) {
+    runtimeHydrated = true;
+    window.localStorage.removeItem(CONFIG_STORAGE_KEY);
   }
 
-  try {
-    const parsed = JSON.parse(raw) as Partial<RuntimeConfig>;
-    return {
-      llmBase: sanitizeUrl(parsed.llmBase ?? DEFAULT_CONFIG.llmBase),
-      llmProvider: normalizeProvider(parsed.llmProvider),
-      llmModel: (parsed.llmModel ?? DEFAULT_CONFIG.llmModel).trim(),
-      maxHistory: normalizeMaxHistory(parsed.maxHistory),
-      debugModelMode: Boolean(parsed.debugModelMode),
-    };
-  } catch {
-    return DEFAULT_CONFIG;
-  }
+  return runtimeConfigState;
 }
 
 export function setRuntimeConfig(next: RuntimeConfig): RuntimeConfig {
@@ -71,8 +63,9 @@ export function setRuntimeConfig(next: RuntimeConfig): RuntimeConfig {
     debugModelMode: Boolean(next.debugModelMode),
   };
 
+  runtimeConfigState = normalized;
+
   if (typeof window !== 'undefined') {
-    window.localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(normalized));
     window.dispatchEvent(new CustomEvent('rag-runtime-config-changed', { detail: normalized }));
   }
 

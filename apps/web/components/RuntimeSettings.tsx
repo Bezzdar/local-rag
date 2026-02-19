@@ -159,7 +159,8 @@ export default function RuntimeSettings() {
       debugModelMode: draft.debugModelMode,
     });
     setRuntime(next);
-    setInfo(`Подключено: Ollama / ${draft.model}.`);
+    const providerLabel = draft.provider === 'openai' ? 'OpenAI-compatible' : 'Ollama';
+    setInfo(`Подключено: ${providerLabel} / ${draft.model}.`);
   };
 
   const disconnect = () => {
