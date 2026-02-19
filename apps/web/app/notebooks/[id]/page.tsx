@@ -8,7 +8,7 @@ import { ChatMode, openChatStream } from '@/lib/sse';
 import { Citation } from '@/types/dto';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const LEFT_MIN = 240;
 const LEFT_MAX = 520;
@@ -25,6 +25,8 @@ export default function NotebookWorkspacePage() {
   const [streaming, setStreaming] = useState('');
   const [citations, setCitations] = useState<Citation[]>([]);
   const [explicitSelection, setExplicitSelection] = useState<string[] | null>(null);
+  const modeRef = useRef<ChatMode>('rag');
+  const closeStreamRef = useRef<(() => void) | null>(null);
 
   const [leftWidth, setLeftWidth] = useState(320);
   const [rightWidth, setRightWidth] = useState(360);
@@ -70,6 +72,19 @@ export default function NotebookWorkspacePage() {
   }, [allSourceIds, explicitSelection, sources.data]);
 
   useEffect(() => {
+    const savedMode = window.localStorage.getItem('chat-mode');
+    if (savedMode === 'model' || savedMode === 'agent' || savedMode === 'rag') {
+      modeRef.current = savedMode;
+      setMode(savedMode);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem('chat-mode', mode);
+    modeRef.current = mode;
+  }, [mode]);
+
+  useEffect(() => {
     setExplicitSelection((current) => {
       if (current === null) {
         return null;
@@ -78,12 +93,23 @@ export default function NotebookWorkspacePage() {
     });
   }, [allSourceIds]);
 
+  useEffect(
+    () => () => {
+      closeStreamRef.current?.();
+      closeStreamRef.current = null;
+    },
+    [],
+  );
+
   const sendMessage = (text: string) => {
+    const activeMode = modeRef.current;
+    closeStreamRef.current?.();
     setStreaming('');
+    setCitations([]);
     const close = openChatStream({
       notebookId,
       message: text,
-      mode,
+      mode: activeMode,
       selectedSourceIds,
       handlers: {
         onToken: (token) => setStreaming((value) => value + token),
@@ -91,11 +117,21 @@ export default function NotebookWorkspacePage() {
         onDone: () => {
           queryClient.invalidateQueries({ queryKey: ['messages', notebookId] });
           setStreaming('');
+          closeStreamRef.current = null;
           close();
         },
-        onError: () => close(),
+        onError: () => {
+          closeStreamRef.current = null;
+          close();
+        },
       },
     });
+    closeStreamRef.current = close;
+  };
+
+  const handleModeChange = (nextMode: ChatMode) => {
+    modeRef.current = nextMode;
+    setMode(nextMode);
   };
 
   const handleToggleSource = (sourceId: string) => {
@@ -201,9 +237,16 @@ export default function NotebookWorkspacePage() {
           messages={messages.data}
           streaming={streaming}
           citations={citations}
-          onModeChange={setMode}
+          onModeChange={handleModeChange}
           onSend={sendMessage}
-          onClearChat={() => clearChat.mutate()}
+          onClearChat={() => {
+            closeStreamRef.current?.();
+            closeStreamRef.current = null;
+            setStreaming('');
+            setCitations([]);
+            queryClient.setQueryData(['messages', notebookId], []);
+            clearChat.mutate();
+          }}
           onSaveToNotes={(content) => createNote.mutate({ title: 'Из чата', content })}
         />
 
