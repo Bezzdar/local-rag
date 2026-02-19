@@ -31,7 +31,7 @@ start "RAG API" cmd /k "cd /d %ROOT% && call .venv\Scripts\activate.bat && uvico
 timeout /t 2 /nobreak >nul
 
 echo [start_windows] Starting WEB terminal...
-start "RAG WEB" cmd /k "cd /d %ROOT%apps\web && npm run dev"
+start "RAG WEB" cmd /k "cd /d %ROOT%apps\web && set PORT=3000 && npm run dev"
 
 echo [start_windows] Done. API: http://127.0.0.1:8000 WEB: http://localhost:3000
 exit /b 0
