@@ -22,6 +22,7 @@ class InMemoryStore:
         self.sources: dict[str, Source] = {}
         self.messages: dict[str, list[ChatMessage]] = {}
         self.notes: dict[str, list[Note]] = {}
+        self.chat_versions: dict[str, int] = {}
         self.seed_data()
 
     def seed_data(self) -> None:
@@ -38,6 +39,7 @@ class InMemoryStore:
         self.notebooks[notebook.id] = notebook
         self.messages.setdefault(notebook.id, [])
         self.notes.setdefault(notebook.id, [])
+        self.chat_versions.setdefault(notebook.id, 0)
 
         demo_dir = DOCS_DIR / notebook.id
         demo_dir.mkdir(parents=True, exist_ok=True)
@@ -53,6 +55,7 @@ class InMemoryStore:
         self.notebooks[notebook.id] = notebook
         self.messages.setdefault(notebook.id, [])
         self.notes.setdefault(notebook.id, [])
+        self.chat_versions.setdefault(notebook.id, 0)
         (DOCS_DIR / notebook.id).mkdir(parents=True, exist_ok=True)
         return notebook
 
@@ -86,6 +89,7 @@ class InMemoryStore:
         del self.notebooks[notebook_id]
         self.messages.pop(notebook_id, None)
         self.notes.pop(notebook_id, None)
+        self.chat_versions.pop(notebook_id, None)
         clear_notebook_blocks(notebook_id)
         return True
 
@@ -139,8 +143,13 @@ class InMemoryStore:
         self.messages.setdefault(notebook_id, []).append(message)
         return message
 
-    def clear_messages(self, notebook_id: str) -> None:
+    def clear_messages(self, notebook_id: str) -> int:
         self.messages[notebook_id] = []
+        self.chat_versions[notebook_id] = self.chat_versions.get(notebook_id, 0) + 1
+        return self.chat_versions[notebook_id]
+
+    def get_chat_version(self, notebook_id: str) -> int:
+        return self.chat_versions.get(notebook_id, 0)
 
     def add_note(self, notebook_id: str, title: str, content: str) -> Note:
         note = Note(id=str(uuid4()), notebook_id=notebook_id, title=title, content=content, created_at=now_iso())

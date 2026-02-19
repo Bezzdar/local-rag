@@ -1,5 +1,6 @@
 'use client';
 
+import ConnectionIndicator from '@/components/ConnectionIndicator';
 import RuntimeSettings from '@/components/RuntimeSettings';
 import { api } from '@/lib/api';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -31,7 +32,10 @@ export default function NotebooksPage() {
       <div className="flex items-start gap-4">
         <div className="min-w-0 flex-1 space-y-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-xl font-semibold">Notebooks</h1>
+            <div>
+              <h1 className="text-xl font-semibold">Notebooks</h1>
+              <ConnectionIndicator />
+            </div>
             <button
               className="rounded bg-slate-900 px-3 py-2 text-white"
               onClick={() => createNotebook.mutate(`Notebook ${new Date().toLocaleTimeString()}`)}
