@@ -31,7 +31,7 @@ npm install
 Pop-Location
 
 $apiCmd = "Set-Location -LiteralPath '$Root'; .\.venv\Scripts\Activate.ps1; uvicorn apps.api.main:app --host $ApiHost --port $ApiPort --reload"
-$webCmd = "Set-Location -LiteralPath '$Root\apps\web'; npm run dev -- --port $WebPort"
+$webCmd = "Set-Location -LiteralPath '$Root\apps\web'; $env:PORT='$WebPort'; npm run dev"
 
 Write-Host "[start_windows] Starting API terminal..."
 Start-Process powershell -ArgumentList "-NoExit", "-Command", $apiCmd
