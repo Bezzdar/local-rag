@@ -2,6 +2,8 @@ import { getRuntimeConfig } from '@/lib/runtime-config';
 
 export type ChatMode = 'qa' | 'draft' | 'table' | 'summarize';
 
+const apiBase = (process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000').replace(/\/+$/, '');
+
 export type StreamHandlers = {
   onToken: (text: string) => void;
   onCitations: (payload: unknown) => void;
@@ -16,16 +18,17 @@ export function openChatStream(params: {
   selectedSourceIds: string[];
   handlers: StreamHandlers;
 }): () => void {
+  const runtimeConfig = getRuntimeConfig();
   const search = new URLSearchParams({
     notebook_id: params.notebookId,
     message: params.message,
     mode: params.mode,
     selected_source_ids: params.selectedSourceIds.join(','),
-    provider: getRuntimeConfig().llmProvider,
-    model: getRuntimeConfig().llmModel,
+    provider: runtimeConfig.llmProvider,
+    model: runtimeConfig.llmModel,
+    base_url: runtimeConfig.llmBase,
   });
 
-  const { apiBase } = getRuntimeConfig();
   const eventSource = new EventSource(`${apiBase}/api/chat/stream?${search.toString()}`);
   eventSource.addEventListener('token', (event) => {
     const text = JSON.parse((event as MessageEvent).data).text as string;
