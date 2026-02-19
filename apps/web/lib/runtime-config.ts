@@ -1,9 +1,11 @@
-export type LlmProvider = 'none' | 'ollama';
+export type LlmProvider = 'none' | 'ollama' | 'openai';
 
 export type RuntimeConfig = {
   llmBase: string;
   llmProvider: LlmProvider;
   llmModel: string;
+  maxHistory: number;
+  debugModelMode: boolean;
 };
 
 const CONFIG_STORAGE_KEY = 'rag.runtime-config';
@@ -13,6 +15,8 @@ const DEFAULT_CONFIG: RuntimeConfig = {
   llmBase: DEFAULT_OLLAMA_BASE,
   llmProvider: 'none',
   llmModel: '',
+  maxHistory: 5,
+  debugModelMode: false,
 };
 
 function sanitizeUrl(value: string): string {
@@ -20,7 +24,18 @@ function sanitizeUrl(value: string): string {
 }
 
 function normalizeProvider(value: string | undefined): LlmProvider {
-  return value === 'ollama' ? 'ollama' : 'none';
+  if (value === 'ollama' || value === 'openai') {
+    return value;
+  }
+  return 'none';
+}
+
+function normalizeMaxHistory(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_CONFIG.maxHistory;
+  }
+  return Math.min(50, Math.max(1, Math.trunc(parsed)));
 }
 
 export function getRuntimeConfig(): RuntimeConfig {
@@ -39,6 +54,8 @@ export function getRuntimeConfig(): RuntimeConfig {
       llmBase: sanitizeUrl(parsed.llmBase ?? DEFAULT_CONFIG.llmBase),
       llmProvider: normalizeProvider(parsed.llmProvider),
       llmModel: (parsed.llmModel ?? DEFAULT_CONFIG.llmModel).trim(),
+      maxHistory: normalizeMaxHistory(parsed.maxHistory),
+      debugModelMode: Boolean(parsed.debugModelMode),
     };
   } catch {
     return DEFAULT_CONFIG;
@@ -50,6 +67,8 @@ export function setRuntimeConfig(next: RuntimeConfig): RuntimeConfig {
     llmBase: sanitizeUrl(next.llmBase || DEFAULT_CONFIG.llmBase),
     llmProvider: normalizeProvider(next.llmProvider),
     llmModel: next.llmModel.trim(),
+    maxHistory: normalizeMaxHistory(next.maxHistory),
+    debugModelMode: Boolean(next.debugModelMode),
   };
 
   if (typeof window !== 'undefined') {

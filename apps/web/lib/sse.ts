@@ -33,7 +33,12 @@ export function openChatStream(params: {
     provider: runtimeConfig.llmProvider,
     model: runtimeConfig.llmModel,
     base_url: runtimeConfig.llmBase,
+    max_history: String(runtimeConfig.maxHistory),
   });
+
+  if (runtimeConfig.debugModelMode) {
+    console.log('[model-mode] openChatStream params', Object.fromEntries(search.entries()));
+  }
 
   const eventSource = new EventSource(`${apiBase}/api/chat/stream?${search.toString()}`);
   eventSource.addEventListener('token', (event) => {
@@ -46,6 +51,11 @@ export function openChatStream(params: {
   eventSource.addEventListener('done', (event) => {
     const messageId = JSON.parse((event as MessageEvent).data).message_id as string;
     params.handlers.onDone(messageId);
+    eventSource.close();
+  });
+  eventSource.addEventListener('error', (event) => {
+    const payload = JSON.parse((event as MessageEvent).data) as { detail?: string };
+    params.handlers.onError(new Error(payload.detail ?? 'SSE model error'));
     eventSource.close();
   });
 

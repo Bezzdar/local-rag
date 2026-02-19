@@ -255,16 +255,17 @@ def test_model_mode_uses_llm_and_chat_history(monkeypatch) -> None:
 
     captured: dict[str, object] = {}
 
-    async def fake_generate_model_answer(*, provider: str, base_url: str, model: str, history: list[dict[str, str]], timeout_s: float = 60.0) -> str:
+    async def fake_stream_model_answer(*, provider: str, base_url: str, model: str, history: list[dict[str, str]], timeout_s: float = 60.0):
         captured['provider'] = provider
         captured['base_url'] = base_url
         captured['model'] = model
         captured['history'] = history
-        return 'Ответ модели с учетом истории'
+        for token in ('Ответ ', 'модели ', 'с учетом ', 'истории'):
+            yield token
 
     from apps.api.routers import chat as chat_router
 
-    monkeypatch.setattr(chat_router, 'generate_model_answer', fake_generate_model_answer)
+    monkeypatch.setattr(chat_router, 'stream_model_answer', fake_stream_model_answer)
 
     response = client.get(
         '/api/chat/stream',
@@ -281,7 +282,7 @@ def test_model_mode_uses_llm_and_chat_history(monkeypatch) -> None:
     assert response.status_code == 200
     assert 'event: token' in response.text
     assert 'Ответ ' in response.text
-    assert 'истории ' in response.text
+    assert 'истории' in response.text
     assert captured['provider'] == 'ollama'
     assert captured['base_url'] == 'http://localhost:11434'
     assert captured['model'] == 'qwen:latest'

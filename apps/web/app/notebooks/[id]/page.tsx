@@ -6,6 +6,7 @@ import EvidencePanel from '@/components/EvidencePanel';
 import SourcesPanel from '@/components/SourcesPanel';
 import { api, CitationsSchema } from '@/lib/api';
 import { ChatMode, openChatStream } from '@/lib/sse';
+import { getRuntimeConfig } from '@/lib/runtime-config';
 import { Citation } from '@/types/dto';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
@@ -126,6 +127,16 @@ export default function NotebookWorkspacePage() {
 
     // Model mode must always use direct LLM path on backend (no retrieval branch).
     const streamMode: ChatMode = currentMode === 'model' ? 'model' : currentMode;
+    const runtimeConfig = getRuntimeConfig();
+    if (runtimeConfig.debugModelMode) {
+      console.log('[model-mode] sendMessage', {
+        mode: streamMode,
+        provider: runtimeConfig.llmProvider,
+        model: runtimeConfig.llmModel,
+        baseUrl: runtimeConfig.llmBase,
+        maxHistory: runtimeConfig.maxHistory,
+      });
+    }
 
     const close = openChatStream({
       notebookId,
