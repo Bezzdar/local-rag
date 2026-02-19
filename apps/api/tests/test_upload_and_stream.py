@@ -68,7 +68,7 @@ def test_upload_index_and_chat_citations_for_pdf_docx_xlsx() -> None:
 
     chat = client.get(
         '/api/chat/stream',
-        params={'notebook_id': notebook_id, 'message': 'Section and page', 'mode': 'qa'},
+        params={'notebook_id': notebook_id, 'message': 'Section and page', 'mode': 'rag'},
     )
     assert chat.status_code == 200
     body = chat.text
@@ -201,3 +201,23 @@ def test_sources_endpoints_for_unknown_notebook_return_404() -> None:
 
     add_path = client.post(f'/api/notebooks/{missing}/sources/add-path', json={'path': '/tmp/file.txt'})
     assert add_path.status_code == 404
+
+
+def test_clear_messages_endpoint_resets_chat_history() -> None:
+    notebook_id = _first_notebook_id()
+    before = client.get(f'/api/notebooks/{notebook_id}/messages')
+    assert before.status_code == 200
+
+    chat = client.get('/api/chat/stream', params={'notebook_id': notebook_id, 'message': 'hello', 'mode': 'model'})
+    assert chat.status_code == 200
+
+    populated = client.get(f'/api/notebooks/{notebook_id}/messages')
+    assert populated.status_code == 200
+    assert len(populated.json()) >= 2
+
+    cleared = client.delete(f'/api/notebooks/{notebook_id}/messages')
+    assert cleared.status_code == 204
+
+    after = client.get(f'/api/notebooks/{notebook_id}/messages')
+    assert after.status_code == 200
+    assert after.json() == []

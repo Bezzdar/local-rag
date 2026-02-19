@@ -42,6 +42,12 @@ export const api = {
     return SourceSchema.parse(await response.json());
   },
   listMessages: (notebookId: string) => request(`/api/notebooks/${notebookId}/messages`, { method: 'GET' }, z.array(ChatMessageSchema)),
+  clearMessages: async (notebookId: string) => {
+    const response = await fetch(`${apiBase}/api/notebooks/${notebookId}/messages`, { method: 'DELETE' });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+  },
   listNotes: (notebookId: string) => request(`/api/notebooks/${notebookId}/notes`, { method: 'GET' }, z.array(NoteSchema)),
   createNote: (notebookId: string, title: string, content: string) =>
     request(

@@ -139,6 +139,9 @@ class InMemoryStore:
         self.messages.setdefault(notebook_id, []).append(message)
         return message
 
+    def clear_messages(self, notebook_id: str) -> None:
+        self.messages[notebook_id] = []
+
     def add_note(self, notebook_id: str, title: str, content: str) -> Note:
         note = Note(id=str(uuid4()), notebook_id=notebook_id, title=title, content=content, created_at=now_iso())
         self.notes.setdefault(notebook_id, []).append(note)

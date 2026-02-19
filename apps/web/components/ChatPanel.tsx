@@ -1,7 +1,7 @@
 'use client';
 
 import { ChatMessage, Citation } from '@/types/dto';
-import { ChatMode } from '@/lib/sse';
+import { CHAT_MODE_OPTIONS, ChatMode } from '@/lib/sse';
 import { useState } from 'react';
 
 type Props = {
@@ -11,6 +11,7 @@ type Props = {
   citations: Citation[];
   onModeChange: (mode: ChatMode) => void;
   onSend: (text: string) => void;
+  onClearChat: () => void;
   onSaveToNotes: (text: string) => void;
 };
 
@@ -21,16 +22,22 @@ export default function ChatPanel(props: Props) {
     <section className="flex-1 min-w-0 p-4 bg-slate-50 flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">Chat</h2>
-        <select
-          className="rounded border border-slate-300 p-2 text-sm"
-          value={props.mode}
-          onChange={(event) => props.onModeChange(event.target.value as ChatMode)}
-        >
-          <option value="qa">QA</option>
-          <option value="draft">Draft</option>
-          <option value="table">Table</option>
-          <option value="summarize">Summarize</option>
-        </select>
+        <div className="flex items-center gap-2">
+          <button className="rounded border border-slate-300 px-3 py-2 text-sm" onClick={props.onClearChat}>
+            Очистить чат
+          </button>
+          <select
+            className="rounded border border-slate-300 p-2 text-sm"
+            value={props.mode}
+            onChange={(event) => props.onModeChange(event.target.value as ChatMode)}
+          >
+            {CHAT_MODE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto space-y-2 min-h-[40vh]">

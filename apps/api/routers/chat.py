@@ -6,6 +6,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 
 from ..schemas import ChatRequest, ChatResponse, Citation, CitationLocation
+from ..services.chat_modes import CHAT_MODES_BY_CODE, build_answer, normalize_chat_mode
 from ..services.search_service import chunk_to_citation_fields, search
 from ..store import store
 
@@ -29,30 +30,27 @@ def _to_citation(notebook_id: str, chunk: dict) -> Citation:
     )
 
 
-def _build_answer(mode: str, message: str, citations: list[Citation]) -> str:
-    mode_label = {
-        "qa": "Ответ",
-        "draft": "Черновик",
-        "table": "Таблица",
-        "summarize": "Суммаризация",
-    }.get(mode, "Ответ")
-    if not citations:
-        return f"{mode_label}: по запросу '{message}' релевантные фрагменты не найдены."
-    first = citations[0]
-    return f"{mode_label}: найдено {len(citations)} фрагментов. Основной источник: {first.filename} (p.{first.location.page}, {first.location.sheet})."
-
-
 @router.get("/notebooks/{notebook_id}/messages")
 def list_messages(notebook_id: str):
     return store.messages.get(notebook_id, [])
 
 
+@router.delete("/notebooks/{notebook_id}/messages", status_code=204)
+def clear_messages(notebook_id: str):
+    store.clear_messages(notebook_id)
+
+
 @router.post("/chat", response_model=ChatResponse)
 def chat(payload: ChatRequest) -> ChatResponse:
+    mode = normalize_chat_mode(payload.mode)
     store.add_message(payload.notebook_id, "user", payload.message)
-    chunks = search(payload.notebook_id, payload.message, payload.selected_source_ids, top_n=5)
+    chunks = (
+        search(payload.notebook_id, payload.message, payload.selected_source_ids, top_n=5)
+        if CHAT_MODES_BY_CODE[mode].uses_retrieval
+        else []
+    )
     citations = [_to_citation(payload.notebook_id, item) for item in chunks]
-    response_text = _build_answer(payload.mode, payload.message, citations)
+    response_text = build_answer(mode, payload.message, citations)
     assistant_message = store.add_message(payload.notebook_id, "assistant", response_text)
     return ChatResponse(message=assistant_message, citations=citations)
 
@@ -61,16 +59,21 @@ def chat(payload: ChatRequest) -> ChatResponse:
 async def chat_stream(
     notebook_id: str,
     message: str,
-    mode: str = "qa",
+    mode: str = "rag",
     selected_source_ids: str = Query(default=""),
 ):
+    normalized_mode = normalize_chat_mode(mode)
     selected_ids = [chunk for chunk in selected_source_ids.split(",") if chunk]
 
     async def stream():
         store.add_message(notebook_id, "user", message)
-        chunks = search(notebook_id, message, selected_ids, top_n=5)
+        chunks = (
+            search(notebook_id, message, selected_ids, top_n=5)
+            if CHAT_MODES_BY_CODE[normalized_mode].uses_retrieval
+            else []
+        )
         citations = [_to_citation(notebook_id, item) for item in chunks]
-        answer = _build_answer(mode, message, citations)
+        answer = build_answer(normalized_mode, message, citations)
 
         assembled = []
         for word in answer.split(" "):
