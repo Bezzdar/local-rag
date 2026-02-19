@@ -65,6 +65,9 @@ class ChatRequest(BaseModel):
     message: str
     selected_source_ids: list[str] = Field(default_factory=list)
     mode: Literal["model", "agent", "rag"]
+    provider: str = "none"
+    model: str = ""
+    base_url: str = ""
 
 
 class ChatResponse(BaseModel):
