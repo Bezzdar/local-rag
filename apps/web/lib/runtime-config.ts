@@ -1,20 +1,26 @@
+export type LlmProvider = 'none' | 'ollama';
+
 export type RuntimeConfig = {
-  apiBase: string;
-  llmProvider: string;
+  llmBase: string;
+  llmProvider: LlmProvider;
   llmModel: string;
 };
 
 const CONFIG_STORAGE_KEY = 'rag.runtime-config';
+const DEFAULT_OLLAMA_BASE = 'http://10.0.10.153:11434';
 
 const DEFAULT_CONFIG: RuntimeConfig = {
-  apiBase: process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000',
-  llmProvider: 'ollama',
-  llmModel: 'llama3.1:8b',
+  llmBase: DEFAULT_OLLAMA_BASE,
+  llmProvider: 'none',
+  llmModel: '',
 };
 
-function sanitizeApiBase(value: string): string {
-  const trimmed = value.trim();
-  return trimmed ? trimmed.replace(/\/+$/, '') : DEFAULT_CONFIG.apiBase;
+function sanitizeUrl(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
+function normalizeProvider(value: string | undefined): LlmProvider {
+  return value === 'ollama' ? 'ollama' : 'none';
 }
 
 export function getRuntimeConfig(): RuntimeConfig {
@@ -30,9 +36,9 @@ export function getRuntimeConfig(): RuntimeConfig {
   try {
     const parsed = JSON.parse(raw) as Partial<RuntimeConfig>;
     return {
-      apiBase: sanitizeApiBase(parsed.apiBase ?? DEFAULT_CONFIG.apiBase),
-      llmProvider: (parsed.llmProvider ?? DEFAULT_CONFIG.llmProvider).trim() || DEFAULT_CONFIG.llmProvider,
-      llmModel: (parsed.llmModel ?? DEFAULT_CONFIG.llmModel).trim() || DEFAULT_CONFIG.llmModel,
+      llmBase: sanitizeUrl(parsed.llmBase ?? DEFAULT_CONFIG.llmBase),
+      llmProvider: normalizeProvider(parsed.llmProvider),
+      llmModel: (parsed.llmModel ?? DEFAULT_CONFIG.llmModel).trim(),
     };
   } catch {
     return DEFAULT_CONFIG;
@@ -41,9 +47,9 @@ export function getRuntimeConfig(): RuntimeConfig {
 
 export function setRuntimeConfig(next: RuntimeConfig): RuntimeConfig {
   const normalized: RuntimeConfig = {
-    apiBase: sanitizeApiBase(next.apiBase),
-    llmProvider: next.llmProvider.trim() || DEFAULT_CONFIG.llmProvider,
-    llmModel: next.llmModel.trim() || DEFAULT_CONFIG.llmModel,
+    llmBase: sanitizeUrl(next.llmBase || DEFAULT_CONFIG.llmBase),
+    llmProvider: normalizeProvider(next.llmProvider),
+    llmModel: next.llmModel.trim(),
   };
 
   if (typeof window !== 'undefined') {
@@ -52,4 +58,8 @@ export function setRuntimeConfig(next: RuntimeConfig): RuntimeConfig {
   }
 
   return normalized;
+}
+
+export function getDefaultOllamaBase(): string {
+  return DEFAULT_OLLAMA_BASE;
 }

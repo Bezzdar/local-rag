@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import chat, notebooks, notes, sources
+from .routers import chat, llm, notebooks, notes, sources
 
 app = FastAPI(title="Local RAG Assistant API")
 
@@ -17,6 +17,7 @@ app.include_router(notebooks.router)
 app.include_router(sources.router)
 app.include_router(chat.router)
 app.include_router(notes.router)
+app.include_router(llm.router)
 
 
 @app.get("/")

@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import { ChatMessageSchema, CitationSchema, NoteSchema, NotebookSchema, SourceSchema } from '@/types/dto';
-import { getRuntimeConfig } from '@/lib/runtime-config';
+
+const apiBase = (process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000').replace(/\/+$/, '');
 
 async function request<T>(path: string, init: RequestInit, schema: z.ZodType<T>): Promise<T> {
-  const { apiBase } = getRuntimeConfig();
   const response = await fetch(`${apiBase}${path}`, { ...init, cache: 'no-store' });
   if (!response.ok) {
     throw new Error(await response.text());
@@ -20,7 +20,6 @@ export const api = {
       NotebookSchema,
     ),
   deleteNotebook: async (notebookId: string) => {
-    const { apiBase } = getRuntimeConfig();
     const response = await fetch(`${apiBase}/api/notebooks/${notebookId}`, { method: 'DELETE' });
     if (!response.ok) {
       throw new Error(await response.text());
@@ -28,14 +27,12 @@ export const api = {
   },
   listSources: (notebookId: string) => request(`/api/notebooks/${notebookId}/sources`, { method: 'GET' }, z.array(SourceSchema)),
   deleteSource: async (sourceId: string) => {
-    const { apiBase } = getRuntimeConfig();
     const response = await fetch(`${apiBase}/api/sources/${sourceId}`, { method: 'DELETE' });
     if (!response.ok) {
       throw new Error(await response.text());
     }
   },
   uploadSource: async (notebookId: string, file: File) => {
-    const { apiBase } = getRuntimeConfig();
     const form = new FormData();
     form.append('file', file);
     const response = await fetch(`${apiBase}/api/notebooks/${notebookId}/sources/upload`, { method: 'POST', body: form });
@@ -52,10 +49,7 @@ export const api = {
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, content }) },
       NoteSchema,
     ),
-  fileUrl: (path: string) => {
-    const { apiBase } = getRuntimeConfig();
-    return `${apiBase}/api/files?path=${encodeURIComponent(path)}`;
-  },
+  fileUrl: (path: string) => `${apiBase}/api/files?path=${encodeURIComponent(path)}`,
 };
 
 export const CitationsSchema = z.array(CitationSchema);
