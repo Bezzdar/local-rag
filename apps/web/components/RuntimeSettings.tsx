@@ -10,6 +10,8 @@ type RuntimeDraft = {
   llmBase: string;
   provider: LlmProvider;
   model: string;
+  maxHistory: number;
+  debugModelMode: boolean;
 };
 
 function getInitialDraft(): RuntimeDraft {
@@ -20,6 +22,8 @@ function getInitialDraft(): RuntimeDraft {
       llmBase: runtime.llmBase || getDefaultOllamaBase(),
       provider: runtime.llmProvider,
       model: runtime.llmModel,
+      maxHistory: runtime.maxHistory,
+      debugModelMode: runtime.debugModelMode,
     };
   }
 
@@ -29,6 +33,8 @@ function getInitialDraft(): RuntimeDraft {
       llmBase: runtime.llmBase || getDefaultOllamaBase(),
       provider: runtime.llmProvider,
       model: runtime.llmModel,
+      maxHistory: runtime.maxHistory,
+      debugModelMode: runtime.debugModelMode,
     };
   }
 
@@ -36,14 +42,18 @@ function getInitialDraft(): RuntimeDraft {
     const parsed = JSON.parse(raw) as Partial<RuntimeDraft>;
     return {
       llmBase: (parsed.llmBase ?? runtime.llmBase ?? getDefaultOllamaBase()).trim(),
-      provider: parsed.provider === 'ollama' ? 'ollama' : 'none',
+      provider: parsed.provider === 'ollama' || parsed.provider === 'openai' ? parsed.provider : 'none',
       model: (parsed.model ?? runtime.llmModel).trim(),
+      maxHistory: Math.min(50, Math.max(1, Number(parsed.maxHistory ?? runtime.maxHistory) || runtime.maxHistory)),
+      debugModelMode: Boolean(parsed.debugModelMode ?? runtime.debugModelMode),
     };
   } catch {
     return {
       llmBase: runtime.llmBase || getDefaultOllamaBase(),
       provider: runtime.llmProvider,
       model: runtime.llmModel,
+      maxHistory: runtime.maxHistory,
+      debugModelMode: runtime.debugModelMode,
     };
   }
 }
@@ -124,7 +134,13 @@ export default function RuntimeSettings() {
 
   const connect = () => {
     if (draft.provider === 'none' || !acceptedBase) {
-      const next = setRuntimeConfig({ llmBase: draft.llmBase, llmProvider: 'none', llmModel: '' });
+      const next = setRuntimeConfig({
+        llmBase: draft.llmBase,
+        llmProvider: 'none',
+        llmModel: '',
+        maxHistory: draft.maxHistory,
+        debugModelMode: draft.debugModelMode,
+      });
       setRuntime(next);
       setInfo('Режим None активирован.');
       return;
@@ -135,13 +151,25 @@ export default function RuntimeSettings() {
       return;
     }
 
-    const next = setRuntimeConfig({ llmBase: acceptedBase, llmProvider: 'ollama', llmModel: draft.model });
+    const next = setRuntimeConfig({
+      llmBase: acceptedBase,
+      llmProvider: draft.provider,
+      llmModel: draft.model,
+      maxHistory: draft.maxHistory,
+      debugModelMode: draft.debugModelMode,
+    });
     setRuntime(next);
     setInfo(`Подключено: Ollama / ${draft.model}.`);
   };
 
   const disconnect = () => {
-    const next = setRuntimeConfig({ llmBase: draft.llmBase, llmProvider: 'none', llmModel: '' });
+    const next = setRuntimeConfig({
+      llmBase: draft.llmBase,
+      llmProvider: 'none',
+      llmModel: '',
+      maxHistory: draft.maxHistory,
+      debugModelMode: draft.debugModelMode,
+    });
     setRuntime(next);
     setInfo('Отключено. Режим None.');
   };
@@ -178,6 +206,7 @@ export default function RuntimeSettings() {
           >
             <option value="none">None</option>
             <option value="ollama">Ollama</option>
+            <option value="openai">OpenAI-compatible</option>
           </select>
         </label>
 
@@ -187,9 +216,10 @@ export default function RuntimeSettings() {
             className="rounded border border-slate-300 p-2"
             value={draft.model}
             onChange={(event) => setDraft((current) => ({ ...current, model: event.target.value }))}
-            disabled={draft.provider !== 'ollama' || loadingModels || models.length === 0}
+            disabled={(draft.provider !== 'ollama' && draft.provider !== 'openai') || (draft.provider === 'ollama' && loadingModels) || (draft.provider === 'ollama' && models.length === 0)}
           >
-            {draft.provider !== 'ollama' ? <option value="">None</option> : null}
+            {draft.provider === 'none' ? <option value="">None</option> : null}
+            {draft.provider === 'openai' ? <option value={draft.model || 'gpt-4o-mini'}>{draft.model || 'gpt-4o-mini'}</option> : null}
             {draft.provider === 'ollama' && models.length === 0 ? <option value="">{loadingModels ? 'Загрузка моделей...' : 'Нет моделей'}</option> : null}
             {models.map((model) => (
               <option key={model} value={model}>
@@ -197,6 +227,27 @@ export default function RuntimeSettings() {
               </option>
             ))}
           </select>
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span>Лимит истории чата (1..50)</span>
+          <input
+            type="number"
+            min={1}
+            max={50}
+            className="rounded border border-slate-300 p-2"
+            value={draft.maxHistory}
+            onChange={(event) => setDraft((current) => ({ ...current, maxHistory: Math.min(50, Math.max(1, Number(event.target.value) || 5)) }))}
+          />
+        </label>
+
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={draft.debugModelMode}
+            onChange={(event) => setDraft((current) => ({ ...current, debugModelMode: event.target.checked }))}
+          />
+          <span>debug_model_mode (включает детальные логи отправки)</span>
         </label>
       </div>
 

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from uuid import uuid4
 
 from fastapi import APIRouter, Query
@@ -7,11 +8,12 @@ from fastapi.responses import StreamingResponse
 
 from ..schemas import ChatRequest, ChatResponse, Citation, CitationLocation
 from ..services.chat_modes import CHAT_MODES_BY_CODE, build_answer, normalize_chat_mode
-from ..services.model_chat import build_chat_history, generate_model_answer
+from ..services.model_chat import build_chat_history, generate_model_answer, stream_model_answer
 from ..services.search_service import chunk_to_citation_fields, search
 from ..store import store
 
 router = APIRouter(prefix="/api", tags=["chat"])
+logger = logging.getLogger(__name__)
 
 
 def to_sse(event: str, payload: object) -> str:
@@ -77,9 +79,19 @@ async def chat_stream(
     provider: str = Query(default="none"),
     model: str = Query(default=""),
     base_url: str = Query(default=""),
+    max_history: int = Query(default=5, ge=1, le=50),
 ):
     normalized_mode = normalize_chat_mode(mode)
     selected_ids = [chunk for chunk in selected_source_ids.split(",") if chunk]
+    logger.info(
+        "CHAT STREAM mode=%s normalized_mode=%s provider=%s model=%s notebook_id=%s max_history=%s",
+        mode,
+        normalized_mode,
+        provider,
+        model,
+        notebook_id,
+        max_history,
+    )
 
     async def stream():
         store.add_message(notebook_id, "user", message)
@@ -92,13 +104,31 @@ async def chat_stream(
         citations = [_to_citation(notebook_id, item) for item in chunks]
 
         if normalized_mode == "model":
-            history = build_chat_history(store.messages.get(notebook_id, []))
-            answer = await generate_model_answer(
-                provider=provider,
-                base_url=base_url,
-                model=model,
-                history=history,
-            )
+            history = build_chat_history(store.messages.get(notebook_id, []), limit=max_history)
+            assembled = []
+            try:
+                async for token in stream_model_answer(
+                    provider=provider,
+                    base_url=base_url,
+                    model=model,
+                    history=history,
+                ):
+                    assembled.append(token)
+                    yield to_sse("token", {"text": token})
+            except RuntimeError as exc:
+                yield to_sse("error", {"detail": str(exc)})
+                yield to_sse("done", {"message_id": ""})
+                return
+
+            yield to_sse("citations", [])
+
+            if store.get_chat_version(notebook_id) != stream_version:
+                yield to_sse("done", {"message_id": ""})
+                return
+
+            assistant = store.add_message(notebook_id, "assistant", "".join(assembled).strip())
+            yield to_sse("done", {"message_id": assistant.id})
+            return
         else:
             answer = build_answer(normalized_mode, message, citations)
 
