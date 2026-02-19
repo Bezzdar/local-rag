@@ -435,6 +435,20 @@ cd apps\web && npm run dev
     ```
 - **`pip install` блокируется proxy/403**
   - Используйте корпоративный PyPI (`PIP_INDEX_URL`) или офлайн-колёса (см. раздел ниже).
+- **`Failed to load SWC binary for win32/x64` или `next-swc.win32-x64-msvc.node is not a valid Win32 application`**
+  - Убедитесь, что установлен **64-битный Node.js** (не x86):
+    ```powershell
+    node -p "process.arch"
+    ```
+    Должно быть `x64`.
+  - Полностью переустановите frontend-зависимости:
+    ```powershell
+    cd apps/web
+    Remove-Item -Recurse -Force node_modules, package-lock.json
+    npm install
+    npm run dev
+    ```
+  - В проект добавлен fallback-пакет `@next/swc-wasm-nodejs`, поэтому даже при проблеме с native SWC dev-сервер сможет стартовать через WASM-реализацию.
 
 
 ### 9) Автоматизированный запуск с нуля (скрипты)
