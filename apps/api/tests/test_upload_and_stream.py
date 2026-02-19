@@ -221,3 +221,75 @@ def test_clear_messages_endpoint_resets_chat_history() -> None:
     after = client.get(f'/api/notebooks/{notebook_id}/messages')
     assert after.status_code == 200
     assert after.json() == []
+
+def test_model_mode_uses_llm_and_chat_history(monkeypatch) -> None:
+    notebook_id = _first_notebook_id()
+
+    client.delete(f'/api/notebooks/{notebook_id}/messages')
+    client.get('/api/chat/stream', params={'notebook_id': notebook_id, 'message': 'Привет', 'mode': 'rag'})
+
+    captured: dict[str, object] = {}
+
+    async def fake_generate_model_answer(*, provider: str, base_url: str, model: str, history: list[dict[str, str]], timeout_s: float = 60.0) -> str:
+        captured['provider'] = provider
+        captured['base_url'] = base_url
+        captured['model'] = model
+        captured['history'] = history
+        return 'Ответ модели с учетом истории'
+
+    from apps.api.routers import chat as chat_router
+
+    monkeypatch.setattr(chat_router, 'generate_model_answer', fake_generate_model_answer)
+
+    response = client.get(
+        '/api/chat/stream',
+        params={
+            'notebook_id': notebook_id,
+            'message': 'И как дела?',
+            'mode': 'model',
+            'provider': 'ollama',
+            'base_url': 'http://localhost:11434',
+            'model': 'qwen:latest',
+        },
+    )
+
+    assert response.status_code == 200
+    assert 'event: token' in response.text
+    assert 'Ответ ' in response.text
+    assert 'истории ' in response.text
+    assert captured['provider'] == 'ollama'
+    assert captured['base_url'] == 'http://localhost:11434'
+    assert captured['model'] == 'qwen:latest'
+
+    history = captured['history']
+    assert isinstance(history, list)
+    assert any(item['role'] == 'assistant' for item in history)
+    assert history[-1] == {'role': 'user', 'content': 'И как дела?'}
+
+
+def test_model_mode_via_post_chat_returns_llm_answer(monkeypatch) -> None:
+    notebook_id = _first_notebook_id()
+
+    async def fake_generate_model_answer(*, provider: str, base_url: str, model: str, history: list[dict[str, str]], timeout_s: float = 60.0) -> str:
+        return f'LLM:{provider}:{model}:{len(history)}'
+
+    from apps.api.routers import chat as chat_router
+
+    monkeypatch.setattr(chat_router, 'generate_model_answer', fake_generate_model_answer)
+
+    response = client.post(
+        '/api/chat',
+        json={
+            'notebook_id': notebook_id,
+            'message': 'Тест запроса',
+            'selected_source_ids': [],
+            'mode': 'model',
+            'provider': 'ollama',
+            'base_url': 'http://localhost:11434',
+            'model': 'llama3.1:8b',
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload['message']['content'].startswith('LLM:ollama:llama3.1:8b:')
+    assert payload['citations'] == []
