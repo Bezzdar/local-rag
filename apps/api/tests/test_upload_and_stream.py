@@ -222,6 +222,31 @@ def test_clear_messages_endpoint_resets_chat_history() -> None:
     assert after.status_code == 200
     assert after.json() == []
 
+
+
+def test_clear_during_stream_does_not_restore_history(monkeypatch) -> None:
+    notebook_id = _first_notebook_id()
+    client.delete(f'/api/notebooks/{notebook_id}/messages')
+
+    import apps.api.routers.chat as chat_router
+
+    called = {'value': False}
+
+    async def fake_sleep(_delay: float) -> None:
+        if not called['value']:
+            called['value'] = True
+            client.delete(f'/api/notebooks/{notebook_id}/messages')
+
+    monkeypatch.setattr(chat_router.asyncio, 'sleep', fake_sleep)
+
+    response = client.get('/api/chat/stream', params={'notebook_id': notebook_id, 'message': 'slow', 'mode': 'rag'})
+    assert response.status_code == 200
+
+    messages = client.get(f'/api/notebooks/{notebook_id}/messages')
+    assert messages.status_code == 200
+    assert messages.json() == []
+
+
 def test_model_mode_uses_llm_and_chat_history(monkeypatch) -> None:
     notebook_id = _first_notebook_id()
 

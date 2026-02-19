@@ -9,6 +9,10 @@ type Props = {
   messages: ChatMessage[];
   streaming: string;
   citations: Citation[];
+  disableSend?: boolean;
+  disableClearChat?: boolean;
+  clearDisabledReason?: string;
+  sendDisabledReason?: string;
   onModeChange: (mode: ChatMode) => void;
   onSend: (text: string) => void;
   onClearChat: () => void;
@@ -23,7 +27,12 @@ export default function ChatPanel(props: Props) {
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">Chat</h2>
         <div className="flex items-center gap-2">
-          <button className="rounded border border-slate-300 px-3 py-2 text-sm" onClick={props.onClearChat}>
+          <button
+            className="rounded border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={props.onClearChat}
+            disabled={props.disableClearChat}
+            title={props.disableClearChat ? props.clearDisabledReason ?? 'Очистка в процессе…' : undefined}
+          >
             Очистить чат
           </button>
           <select
@@ -61,10 +70,12 @@ export default function ChatPanel(props: Props) {
           onChange={(event) => setInput(event.target.value)}
         />
         <button
-          className="rounded bg-slate-900 px-4 text-white"
+          className="rounded bg-slate-900 px-4 text-white disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={props.disableSend}
+          title={props.disableSend ? props.sendDisabledReason ?? 'Действие временно недоступно…' : undefined}
           onClick={() => {
             const text = input.trim();
-            if (!text) {
+            if (!text || props.disableSend) {
               return;
             }
             props.onSend(text);

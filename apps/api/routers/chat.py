@@ -83,6 +83,7 @@ async def chat_stream(
 
     async def stream():
         store.add_message(notebook_id, "user", message)
+        stream_version = store.get_chat_version(notebook_id)
         chunks = (
             search(notebook_id, message, selected_ids, top_n=5)
             if CHAT_MODES_BY_CODE[normalized_mode].uses_retrieval
@@ -108,8 +109,13 @@ async def chat_stream(
             yield to_sse("token", {"text": token})
             await asyncio.sleep(0.04)
 
-        assistant = store.add_message(notebook_id, "assistant", "".join(assembled).strip())
         yield to_sse("citations", [citation.model_dump() for citation in citations])
+
+        if store.get_chat_version(notebook_id) != stream_version:
+            yield to_sse("done", {"message_id": ""})
+            return
+
+        assistant = store.add_message(notebook_id, "assistant", "".join(assembled).strip())
         yield to_sse("done", {"message_id": assistant.id})
 
     return StreamingResponse(stream(), media_type="text/event-stream")

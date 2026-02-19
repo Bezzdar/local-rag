@@ -703,3 +703,6 @@ make smoke    # alias to verify
 4. В центральной панели задайте вопрос.
 5. Справа проверьте `Citations` (доказательства) и при необходимости сохраните ответ в `Notes`.
 6. При необходимости меняйте ширину/видимость боковых панелей для удобного layout.
+
+## Notebook testing note
+See `notebook.md` for environment limitations and E2E prerequisites for Notebook checks.
