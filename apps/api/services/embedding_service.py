@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import time
 from dataclasses import asdict, dataclass, field
@@ -13,11 +14,12 @@ from pathlib import Path
 from typing import Callable, Literal, Optional
 
 import httpx
+from ..config import BASE_DIR, CHUNKS_DIR
 
 try:
     import numpy as np
-except Exception as exc:  # pragma: no cover
-    raise RuntimeError("numpy is required for embedding service") from exc
+except Exception:  # noqa: BLE001
+    np = None
 
 try:  # pragma: no cover - optional in tests
     import faiss
@@ -60,8 +62,9 @@ class EmbeddingConfig:
     normalize_embeddings: bool = True
     batch_size: int = 16
     quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
-    parsing_root: str = "./parsing"
-    base_root: str = "./base"
+    parsing_root: str = str(CHUNKS_DIR)
+    base_root: str = str(BASE_DIR)
+    delete_parsing_after_embed: bool = False
 
 
 @dataclass
@@ -146,11 +149,11 @@ class EmbeddingClient:
         self._provider = provider
         self._client = httpx.Client(timeout=provider.api_timeout)
         if not self.health_check():
-            raise EmbeddingServerUnavailableError(
-                f"Embedding server unavailable: {provider.base_url}. Check Ollama availability."
-            )
+            logger.warning("[embedding] Server unavailable: %s. Fallback to zero vectors.", provider.base_url)
+            self._embedding_dim = 384
+            return
         probe = self.get_embeddings(["dimension probe"])
-        self._embedding_dim = len(probe[0]) if probe and probe[0] else 0
+        self._embedding_dim = len(probe[0]) if probe and probe[0] else 384
         logger.info(
             "[embedding] Server: %s, model: %s, dim: %s",
             provider.base_url,
@@ -280,8 +283,20 @@ class EmbeddingEngine:
             encoding="utf-8",
         )
         self._update_registry(notebook_id, doc_id, len(built))
-        parsing_file.unlink(missing_ok=True)
+        if self.config.delete_parsing_after_embed:
+            parsing_file.unlink(missing_ok=True)
         return built
+
+    def embed_document_from_parsing(
+        self,
+        notebook_id: str,
+        doc_id: str,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> list[EmbeddedChunk]:
+        parsing_file = Path(self.config.parsing_root) / notebook_id / f"{doc_id}.json"
+        payload = json.loads(parsing_file.read_text(encoding="utf-8"))
+        chunks = payload["chunks"] if isinstance(payload, dict) and "chunks" in payload else payload
+        return self.embed_chunks(chunks, notebook_id=notebook_id, doc_id=doc_id, progress_callback=progress_callback)
 
     def embed_chunks(
         self,
@@ -344,7 +359,10 @@ class EmbeddingEngine:
 
     def build_index(self, notebook_id: str) -> None:
         if faiss is None:
-            self._indices[notebook_id] = np.zeros((0, self.config.embedding_dim), dtype="float32")
+            if np is None:
+                self._indices[notebook_id] = []
+            else:
+                self._indices[notebook_id] = np.zeros((0, self.config.embedding_dim), dtype="float32")
             return
         method = self.config.quantization.method if self.config.quantization.enabled else "none"
         dim = self.config.embedding_dim
@@ -441,12 +459,19 @@ class EmbeddingEngine:
         k = top_k * oversample
         if faiss is None:
             vectors = self._indices[notebook_id]
-            if vectors.shape[0] == 0:
+            if np is None:
+                if not vectors:
+                    return []
+                pairs = [(sum(a * b for a, b in zip(vec, query_vector)), idx) for idx, vec in enumerate(vectors)]
+                pairs.sort(key=lambda x: x[0], reverse=True)
+                pairs = [(float(s), int(i)) for s, i in pairs[:k]]
+            elif vectors.shape[0] == 0:
                 return []
-            q = np.array(query_vector, dtype="float32")
-            scores = vectors @ q
-            idxs = np.argsort(scores)[::-1][:k]
-            pairs = [(float(scores[i]), int(i)) for i in idxs]
+            else:
+                q = np.array(query_vector, dtype="float32")
+                scores = vectors @ q
+                idxs = np.argsort(scores)[::-1][:k]
+                pairs = [(float(scores[i]), int(i)) for i in idxs]
         else:
             scores, ids = self._indices[notebook_id].search(np.array([query_vector], dtype="float32"), k)
             pairs = [(float(s), int(i)) for s, i in zip(scores[0], ids[0]) if i >= 0]
@@ -472,10 +497,14 @@ class EmbeddingEngine:
         if not vectors:
             return
         self._ensure_index(notebook_id)
-        arr = np.array(vectors, dtype="float32")
         if faiss is None:
-            self._indices[notebook_id] = np.vstack([self._indices[notebook_id], arr])
+            if np is None:
+                self._indices[notebook_id].extend(vectors)
+            else:
+                arr = np.array(vectors, dtype="float32")
+                self._indices[notebook_id] = np.vstack([self._indices[notebook_id], arr])
             return
+        arr = np.array(vectors, dtype="float32")
         index = self._indices[notebook_id]
         if hasattr(index, "is_trained") and not index.is_trained:
             train_size = min(len(arr), self.config.quantization.train_size)
@@ -494,6 +523,8 @@ class EmbeddingEngine:
         if index is None:
             return 0
         if faiss is None:
+            if np is None:
+                return len(index)
             return int(index.shape[0])
         return int(index.ntotal)
 
@@ -553,6 +584,11 @@ def _now_iso() -> str:
 
 
 def _normalize(vector: list[float]) -> list[float]:
+    if np is None:
+        norm = math.sqrt(sum(x * x for x in vector))
+        if norm <= 0:
+            return vector
+        return [float(x / norm) for x in vector]
     arr = np.array(vector, dtype="float32")
     norm = float(np.linalg.norm(arr))
     if norm <= 0:

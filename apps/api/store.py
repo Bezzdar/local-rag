@@ -4,17 +4,21 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 from pathlib import Path
 from uuid import uuid4
 
-from .config import BASE_DIR, CHUNKS_DIR, DOCS_DIR
+from .config import BASE_DIR, CHUNKS_DIR, DOCS_DIR, NOTEBOOKS_DB_DIR
 from .schemas import ChatMessage, Note, Notebook, ParsingSettings, Source, now_iso
 from .services.index_service import clear_notebook_blocks, index_source, remove_source_blocks
+from .services.embedding_service import EmbeddingConfig, EmbeddingEngine, EmbeddingProviderConfig
+from .services.notebook_db import db_for_notebook
 
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
 BASE_DIR.mkdir(parents=True, exist_ok=True)
 CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
+NOTEBOOKS_DB_DIR.mkdir(parents=True, exist_ok=True)
 
 DEMO_NOTEBOOK_ID = "00000000-0000-0000-0000-000000000001"
 
@@ -28,7 +32,20 @@ class InMemoryStore:
         self.notes: dict[str, list[Note]] = {}
         self.chat_versions: dict[str, int] = {}
         self.parsing_settings: dict[str, ParsingSettings] = {}
+        self._embedding_engine: EmbeddingEngine | None = None
         self.seed_data()
+
+    def _get_embedding_engine(self) -> EmbeddingEngine:
+        if self._embedding_engine is None:
+            self._embedding_engine = EmbeddingEngine(
+                EmbeddingConfig(
+                    provider=EmbeddingProviderConfig(
+                        base_url=os.getenv("EMBEDDING_BASE_URL", "http://localhost:11434"),
+                        model_name=os.getenv("EMBEDDING_MODEL", "nomic-embed-text"),
+                    )
+                )
+            )
+        return self._embedding_engine
 
     def seed_data(self) -> None:
         if self.notebooks:
@@ -106,6 +123,8 @@ class InMemoryStore:
                         file.unlink(missing_ok=True)
                 directory.rmdir()
 
+        (NOTEBOOKS_DB_DIR / f"{notebook_id}.db").unlink(missing_ok=True)
+
         del self.notebooks[notebook_id]
         self.messages.pop(notebook_id, None)
         self.notes.pop(notebook_id, None)
@@ -158,7 +177,24 @@ class InMemoryStore:
                 "ocr_enabled": bool(global_cfg.ocr_enabled if indiv.get("ocr_enabled") is None else indiv.get("ocr_enabled")),
                 "ocr_language": str(indiv.get("ocr_language") or global_cfg.ocr_language),
             }
-            asyncio.run(index_source(source.notebook_id, source.id, source.file_path, parser_config=parser_config, source_state=source.model_dump()))
+            metadata, _ = asyncio.run(
+                index_source(
+                    source.notebook_id,
+                    source.id,
+                    source.file_path,
+                    parser_config=parser_config,
+                    source_state=source.model_dump(),
+                )
+            )
+            embedded_chunks = self._get_embedding_engine().embed_document_from_parsing(source.notebook_id, source.id)
+            notebook_db = db_for_notebook(source.notebook_id)
+            notebook_db.upsert_document(
+                metadata=metadata,
+                embedded_chunks=embedded_chunks,
+                tags=[],
+                is_enabled=source.is_enabled,
+            )
+            notebook_db.close()
             source.status = "indexed"
             source.has_parsing = True
             source.has_base = True
@@ -193,6 +229,10 @@ class InMemoryStore:
         parsing_file.unlink(missing_ok=True)
         base_file = BASE_DIR / source.notebook_id / f"{source.id}.json"
         base_file.unlink(missing_ok=True)
+        notebook_db = db_for_notebook(source.notebook_id)
+        notebook_db.conn.execute("DELETE FROM documents WHERE doc_id=?", (source.id,))
+        notebook_db.conn.commit()
+        notebook_db.close()
         source.has_parsing = False
         source.has_base = False
         source.status = "new"
@@ -215,6 +255,14 @@ class InMemoryStore:
     def update_parsing_settings(self, notebook_id: str, payload: ParsingSettings) -> ParsingSettings:
         self.parsing_settings[notebook_id] = payload
         return payload
+
+    def sync_source_enabled(self, source_id: str, enabled: bool) -> None:
+        source = self.sources.get(source_id)
+        if not source:
+            return
+        notebook_db = db_for_notebook(source.notebook_id)
+        notebook_db.set_document_enabled(source_id, enabled)
+        notebook_db.close()
 
     def add_message(self, notebook_id: str, role: str, content: str) -> ChatMessage:
         message = ChatMessage(
