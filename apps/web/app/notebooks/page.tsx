@@ -1,6 +1,7 @@
 'use client';
 
 import ConnectionIndicator from '@/components/ConnectionIndicator';
+import ParsingSettingsPanel from '@/components/ParsingSettingsPanel';
 import RuntimeSettings from '@/components/RuntimeSettings';
 import { api } from '@/lib/api';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -9,6 +10,9 @@ import { useState } from 'react';
 
 export default function NotebooksPage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(true);
+  const [isRuntimeOpen, setIsRuntimeOpen] = useState(true);
+  const [isParsingOpen, setIsParsingOpen] = useState(true);
+  const [selectedNotebookId, setSelectedNotebookId] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const notebooks = useQuery({ queryKey: ['notebooks'], queryFn: api.listNotebooks });
   const createNotebook = useMutation({
@@ -26,6 +30,8 @@ export default function NotebooksPage() {
   if (notebooks.isError) {
     return <div className="p-6">Failed to load notebooks.</div>;
   }
+
+  const activeNotebookId = selectedNotebookId ?? notebooks.data?.[0]?.id;
 
   return (
     <div className="mx-auto max-w-7xl p-6">
@@ -48,7 +54,11 @@ export default function NotebooksPage() {
 
           <div className="space-y-2">
             {notebooks.data?.map((notebook) => (
-              <div key={notebook.id} className="rounded border bg-white p-3">
+              <div
+                key={notebook.id}
+                className={`rounded border bg-white p-3 ${activeNotebookId === notebook.id ? 'border-slate-400' : ''}`}
+                onClick={() => setSelectedNotebookId(notebook.id)}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <Link href={`/notebooks/${notebook.id}`} className="block flex-1 hover:text-slate-700">
                     <div className="font-medium">{notebook.title}</div>
@@ -79,7 +89,33 @@ export default function NotebooksPage() {
               {isSettingsOpen ? '→' : '←'}
             </button>
           </div>
-          {isSettingsOpen ? <RuntimeSettings /> : null}
+          {isSettingsOpen ? (
+            <div className="space-y-2">
+              <section className="rounded border border-slate-200 p-2">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between text-left text-sm font-semibold"
+                  onClick={() => setIsRuntimeOpen((current) => !current)}
+                >
+                  Настройки подключения LLM
+                  <span>{isRuntimeOpen ? '−' : '+'}</span>
+                </button>
+                {isRuntimeOpen ? <div className="mt-2"><RuntimeSettings /></div> : null}
+              </section>
+
+              <section className="rounded border border-slate-200 p-2">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between text-left text-sm font-semibold"
+                  onClick={() => setIsParsingOpen((current) => !current)}
+                >
+                  Глобальные настройки парсинга
+                  <span>{isParsingOpen ? '−' : '+'}</span>
+                </button>
+                {isParsingOpen && activeNotebookId ? <div className="mt-2"><ParsingSettingsPanel notebookId={activeNotebookId} /></div> : null}
+              </section>
+            </div>
+          ) : null}
         </aside>
       </div>
     </div>

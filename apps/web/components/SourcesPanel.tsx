@@ -107,38 +107,37 @@ export default function SourcesPanel(props: Props) {
       <div className="space-y-2 max-h-[55vh] overflow-auto">
         {visibleSources.length === 0 ? <p className="text-sm text-slate-500">Нет источников</p> : null}
         {visibleSources.map((source) => (
-          <div key={source.id} className="rounded border border-slate-200 p-2 space-y-2">
-            <div className="flex items-start gap-2">
+          <div key={source.id} className="rounded border border-slate-200 p-2">
+            <div className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
                 checked={props.selectedSourceIds.includes(source.id)}
                 onChange={() => props.onToggleSource(source.id)}
+                title="Выбрать источник для чата"
               />
-              <p className="text-sm font-medium break-all flex-1">{source.filename}</p>
-              <input
-                type="checkbox"
-                checked={source.is_enabled ?? true}
-                onChange={(e) => props.onToggleEnabled(source, e.target.checked)}
-                title="Вкл/выкл документа"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex gap-3 text-xl leading-none">
+              <p className="min-w-0 flex-1 truncate font-medium" title={source.filename}>{source.filename}</p>
+              <span className="rounded bg-slate-100 px-2 py-0.5 text-xs">{source.status}</span>
+              <div className="flex gap-2 text-lg leading-none">
                 <Lamp label="d" active={source.has_docs ?? false} />
                 <Lamp label="p" active={source.has_parsing ?? false} />
                 <Lamp label="b" active={source.has_base ?? false} />
               </div>
+              <input
+                type="checkbox"
+                checked={source.is_enabled ?? true}
+                onChange={(e) => props.onToggleEnabled(source, e.target.checked)}
+                title="Включить/выключить документ"
+              />
               <div className="flex gap-1">
-                <button type="button" className="rounded border px-2 text-xs" onClick={() => props.onOpenConfig(source)}>⚙</button>
-                <button type="button" className="rounded border border-red-300 px-2 text-xs text-red-600" onClick={() => props.onDeleteSource(source)}>
+                <button type="button" className="rounded border px-2 text-xs" onClick={() => props.onOpenConfig(source)} title="Настроить парсинг файла">⚙</button>
+                <button type="button" className="rounded border border-red-300 px-2 text-xs text-red-600" onClick={() => props.onDeleteSource(source)} title="Удалить файл">
                   🗑
                 </button>
-                <button type="button" className="rounded border border-amber-300 px-2 text-xs text-amber-700" onClick={() => props.onEraseSource(source)}>
+                <button type="button" className="rounded border border-amber-300 px-2 text-xs text-amber-700" onClick={() => props.onEraseSource(source)} title="Стереть parsing/base данные">
                   ✖
                 </button>
               </div>
             </div>
-            <span className="inline-block rounded bg-slate-100 px-2 py-0.5 text-xs">{source.status}</span>
           </div>
         ))}
       </div>
