@@ -69,10 +69,18 @@ async def generate_model_answer(
     try:
         request_url = f"{endpoint}/api/chat" if selected_provider == "ollama" else f"{endpoint}/v1/chat/completions"
         headers = _openai_headers(selected_model) if selected_provider == "openai" else None
+        logger.info(
+            "Sending non-streaming request to LLM provider",
+            extra={"event": "llm.request", "details": f"provider={selected_provider}; model={selected_model}; url={request_url}"},
+        )
         async with httpx.AsyncClient(timeout=timeout_s) as client:
             response = await client.post(request_url, json=payload, headers=headers)
             response.raise_for_status()
     except httpx.HTTPError as exc:
+        logger.warning(
+            "LLM non-streaming request failed",
+            extra={"event": "llm.request.failed", "details": f"provider={selected_provider}; model={selected_model}; error={exc}"},
+        )
         return f"Ошибка запроса к модели ({selected_model}): {exc}"
 
     data = response.json()
@@ -133,6 +141,15 @@ async def stream_model_answer(
     if DEBUG_MODEL_MODE:
         logger.info("stream_model_answer provider=%s url=%s model=%s history=%s", selected_provider, request_url, selected_model, history)
 
+    received_packets = 0
+    dropped_packets = 0
+    received_chars = 0
+
+    logger.info(
+        "Opening streaming connection to LLM provider",
+        extra={"event": "llm.stream.open", "details": f"provider={selected_provider}; model={selected_model}; url={request_url}"},
+    )
+
     try:
         async with httpx.AsyncClient(timeout=timeout_s) as client:
             async with client.stream("POST", request_url, json=payload, headers=headers) as response:
@@ -147,6 +164,7 @@ async def stream_model_answer(
                     try:
                         item = json.loads(line)
                     except json.JSONDecodeError:
+                        dropped_packets += 1
                         continue
 
                     if selected_provider == "ollama":
@@ -154,6 +172,8 @@ async def stream_model_answer(
                         if isinstance(message, dict):
                             token = message.get("content")
                             if isinstance(token, str) and token:
+                                received_packets += 1
+                                received_chars += len(token)
                                 yield token
                     else:
                         choices = item.get("choices")
@@ -162,7 +182,23 @@ async def stream_model_answer(
                             if isinstance(delta, dict):
                                 token = delta.get("content")
                                 if isinstance(token, str) and token:
+                                    received_packets += 1
+                                    received_chars += len(token)
                                     yield token
     except httpx.HTTPError as exc:
-        logger.exception("LLM streaming request failed")
+        logger.exception(
+            "LLM streaming request failed",
+            extra={
+                "event": "llm.stream.failed",
+                "details": f"provider={selected_provider}; model={selected_model}; received_packets={received_packets}; dropped_packets={dropped_packets}; error={exc}",
+            },
+        )
         raise RuntimeError(f"Ошибка запроса к модели ({selected_model}): {exc}") from exc
+
+    logger.info(
+        "LLM streaming finished",
+        extra={
+            "event": "llm.stream.completed",
+            "details": f"provider={selected_provider}; model={selected_model}; received_packets={received_packets}; dropped_packets={dropped_packets}; received_chars={received_chars}",
+        },
+    )

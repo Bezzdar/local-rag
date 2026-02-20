@@ -84,18 +84,21 @@ async def chat_stream(
     normalized_mode = normalize_chat_mode(mode)
     selected_ids = [chunk for chunk in selected_source_ids.split(",") if chunk]
     logger.info(
-        "CHAT STREAM mode=%s normalized_mode=%s provider=%s model=%s notebook_id=%s max_history=%s",
+        "CHAT STREAM opened mode=%s normalized_mode=%s provider=%s model=%s notebook_id=%s max_history=%s",
         mode,
         normalized_mode,
         provider,
         model,
         notebook_id,
         max_history,
+        extra={"event": "chat.stream.open", "details": f"selected_source_ids={selected_ids}; message_len={len(message)}"},
     )
 
     async def stream():
         store.add_message(notebook_id, "user", message)
         stream_version = store.get_chat_version(notebook_id)
+        sent_packets = 0
+        sent_chars = 0
         chunks = (
             search(notebook_id, message, selected_ids, top_n=5)
             if CHAT_MODES_BY_CODE[normalized_mode].uses_retrieval
@@ -114,8 +117,14 @@ async def chat_stream(
                     history=history,
                 ):
                     assembled.append(token)
+                    sent_packets += 1
+                    sent_chars += len(token)
                     yield to_sse("token", {"text": token})
             except RuntimeError as exc:
+                logger.warning(
+                    "LLM stream interrupted",
+                    extra={"event": "chat.stream.error", "details": f"provider={provider}; model={model}; error={exc}"},
+                )
                 yield to_sse("error", {"detail": str(exc)})
                 yield to_sse("done", {"message_id": ""})
                 return
@@ -127,6 +136,13 @@ async def chat_stream(
                 return
 
             assistant = store.add_message(notebook_id, "assistant", "".join(assembled).strip())
+            logger.info(
+                "LLM stream completed",
+                extra={
+                    "event": "chat.stream.completed",
+                    "details": f"mode=model; packets_sent={sent_packets}; chars_sent={sent_chars}; citations=0",
+                },
+            )
             yield to_sse("done", {"message_id": assistant.id})
             return
         else:
@@ -136,6 +152,8 @@ async def chat_stream(
         for word in answer.split(" "):
             token = f"{word} "
             assembled.append(token)
+            sent_packets += 1
+            sent_chars += len(token)
             yield to_sse("token", {"text": token})
             await asyncio.sleep(0.04)
 
@@ -146,6 +164,13 @@ async def chat_stream(
             return
 
         assistant = store.add_message(notebook_id, "assistant", "".join(assembled).strip())
+        logger.info(
+            "Template stream completed",
+            extra={
+                "event": "chat.stream.completed",
+                "details": f"mode={normalized_mode}; packets_sent={sent_packets}; chars_sent={sent_chars}; citations={len(citations)}",
+            },
+        )
         yield to_sse("done", {"message_id": assistant.id})
 
     return StreamingResponse(stream(), media_type="text/event-stream")

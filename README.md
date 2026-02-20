@@ -477,7 +477,8 @@ start_windows.cmd
 3. Устанавливает зависимости frontend (`npm install` в `apps/web`).
 4. Копирует `.env.example` -> `apps/web/.env.local` (если ещё не создан).
 5. Открывает терминал API с `uvicorn ... --reload`.
-6. Открывает терминал WEB с `npm run dev`.
+6. Автоматически открывает отдельный терминал логов backend с `tail`/`Get-Content -Wait` для `data/logs/app.log`.
+7. Открывает терминал WEB с `npm run dev`.
 
 ### 10) Скрипт горячего обновления из репозитория
 
