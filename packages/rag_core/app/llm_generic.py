@@ -1,4 +1,8 @@
+"""Унифицированные адаптеры для LLM-вызовов."""
+
 # llm_generic.py — обёртка вокруг llama.cpp / Ollama HTTP API
+
+# --- Imports ---
 from __future__ import annotations
 
 import json
@@ -16,6 +20,7 @@ LOGGER = logging.getLogger(__name__)
 _session: Optional[requests.Session] = None
 
 
+# --- Основные блоки ---
 def _get_session() -> requests.Session:
     """Singleton Session with retry logic (3×, 0.5‑1‑2s)."""
     global _session

@@ -1,3 +1,6 @@
+"""Сервис вычисления/подготовки эмбеддингов."""
+
+# --- Imports ---
 from __future__ import annotations
 
 import json
@@ -24,6 +27,7 @@ except Exception:  # noqa: BLE001
 logger = logging.getLogger(__name__)
 
 
+# --- Основные блоки ---
 class EmbeddingServerUnavailableError(RuntimeError):
     pass
 

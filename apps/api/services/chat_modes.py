@@ -1,3 +1,6 @@
+"""Определение и обработка режимов чата."""
+
+# --- Imports ---
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -5,6 +8,7 @@ from dataclasses import dataclass
 from ..schemas import Citation
 
 
+# --- Основные блоки ---
 @dataclass(frozen=True)
 class ChatModeSpec:
     code: str

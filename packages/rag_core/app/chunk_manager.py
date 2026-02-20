@@ -1,3 +1,5 @@
+"""Разбиение документов на parent/child чанки."""
+
 # chunk_manager.py — текстовый и семантический чанк‑менеджер
 # ---------------------------------------------------------------------------
 # Обновлён 2025‑06‑04 | ChatGPT‑o3 refactor
@@ -7,6 +9,7 @@
 #   • Единый центральный PersistentClient вместо множества
 #   • Мелкий cleanup: type‑hints, докстринги, безопасные print → logging
 
+# --- Imports ---
 from __future__ import annotations
 
 import json
@@ -62,6 +65,7 @@ CHUNK_ROOT = Path("data") / "chunks"
 # ---------- Chroma helpers --------------------------------------------------
 
 
+# --- Основные блоки ---
 def _safe_name(name: str) -> str:
     """Return a Chroma‑safe ASCII slug (3‑63 chars)."""
     return slugify(name, separator="_", lowercase=True)

@@ -1,3 +1,6 @@
+"""Роуты жизненного цикла notebook-сущностей."""
+
+# --- Imports ---
 from fastapi import APIRouter, HTTPException
 
 from ..schemas import CreateNotebookRequest, IndexStatus, Notebook, ParsingSettings, UpdateNotebookRequest
@@ -6,6 +9,7 @@ from ..store import store
 router = APIRouter(prefix="/api", tags=["notebooks"])
 
 
+# --- Основные блоки ---
 @router.get("/notebooks", response_model=list[Notebook])
 def list_notebooks() -> list[Notebook]:
     return list(store.notebooks.values())

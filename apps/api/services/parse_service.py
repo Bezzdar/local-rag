@@ -1,3 +1,6 @@
+"""Сервис парсинга и нормализации документов."""
+
+# --- Imports ---
 from __future__ import annotations
 
 import hashlib
@@ -20,6 +23,7 @@ except Exception:  # noqa: BLE001
     tiktoken = None
 
 
+# --- Основные блоки ---
 class UnsupportedFormatError(Exception):
     pass
 

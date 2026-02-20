@@ -1,3 +1,6 @@
+"""Роуты чата и потоковой выдачи ответов."""
+
+# --- Imports ---
 import asyncio
 import json
 import logging
@@ -16,6 +19,7 @@ router = APIRouter(prefix="/api", tags=["chat"])
 logger = logging.getLogger(__name__)
 
 
+# --- Основные блоки ---
 def to_sse(event: str, payload: object) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 

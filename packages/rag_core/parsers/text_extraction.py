@@ -1,4 +1,6 @@
 """text_extraction.py — extraction + section-aware chunk-ready blocks."""
+
+# --- Imports ---
 from __future__ import annotations
 
 import concurrent.futures as _fut
@@ -15,6 +17,7 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
+# --- Основные блоки ---
 class TextBlock(TypedDict):
     """Unified parser contract used across extraction/chunking/indexing."""
 

@@ -1,3 +1,6 @@
+"""Чтение/запись пользовательских настроек ядра."""
+
+# --- Imports ---
 import os
 import json
 
@@ -19,6 +22,7 @@ AVAILABLE_SERVERS = {
     "Глобальный сервер": "http://YOUR_GLOBAL_SERVER_IP:8000"   # ← замени на нужный IP/порт!
 }
 
+# --- Основные блоки ---
 def get_share_library():
     settings = load_settings()
     return settings.get("share_library", False)

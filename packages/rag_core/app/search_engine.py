@@ -6,6 +6,8 @@
   • Pre‑normalize словари AND/OR/NOT
   • Никакая функциональность не сломана — API прежний
 """
+
+# --- Imports ---
 from __future__ import annotations
 
 import heapq
@@ -40,6 +42,7 @@ _TERM_SYNONYMS: Dict[str, Sequence[str]] = {
 }
 
 
+# --- Основные блоки ---
 def _norm_term(term: str) -> str:
     return term.strip().lower().replace("ё", "е")
 

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
+# Скрипт локального запуска backend API (uvicorn) с логированием в файл.
 set -euo pipefail
 
+# --- Подготовка путей и лог-файла ---
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
@@ -17,6 +19,7 @@ PID=$!
 echo "[dev_run] pid=$PID"
 echo "[dev_run] press Ctrl+C to stop"
 
+# --- Корректная остановка фонового процесса ---
 cleanup() {
   echo "[dev_run] stopping uvicorn pid=$PID"
   kill "$PID" 2>/dev/null || true

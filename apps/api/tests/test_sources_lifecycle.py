@@ -1,3 +1,6 @@
+"""Тесты жизненного цикла источников."""
+
+# --- Imports ---
 from __future__ import annotations
 
 import time
@@ -10,6 +13,7 @@ from apps.api.config import BASE_DIR
 client = TestClient(app)
 
 
+# --- Основные блоки ---
 def _first_notebook_id() -> str:
     response = client.get('/api/notebooks')
     response.raise_for_status()

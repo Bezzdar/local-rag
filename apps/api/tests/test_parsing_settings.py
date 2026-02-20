@@ -1,3 +1,6 @@
+"""Тесты настроек парсинга API."""
+
+# --- Imports ---
 from __future__ import annotations
 
 import json
@@ -11,6 +14,7 @@ from apps.api.main import app
 client = TestClient(app)
 
 
+# --- Основные блоки ---
 def _first_notebook_id() -> str:
     response = client.get('/api/notebooks')
     response.raise_for_status()

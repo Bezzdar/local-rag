@@ -1,3 +1,6 @@
+"""Тесты сервиса эмбеддингов."""
+
+# --- Imports ---
 from __future__ import annotations
 
 import json
@@ -12,6 +15,7 @@ from apps.api.services.embedding_service import (
 )
 
 
+# --- Основные блоки ---
 class DummyClient:
     def __init__(self, provider):
         self._embedding_dim = 4
