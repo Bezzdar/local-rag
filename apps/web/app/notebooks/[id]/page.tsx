@@ -7,7 +7,7 @@ import SourcesPanel from '@/components/SourcesPanel';
 import { api, CitationsSchema } from '@/lib/api';
 import { ChatMode, openChatStream } from '@/lib/sse';
 import { getRuntimeConfig } from '@/lib/runtime-config';
-import { Citation, ParsingSettings, Source } from '@/types/dto';
+import { Citation, Source } from '@/types/dto';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -50,7 +50,6 @@ export default function NotebookWorkspacePage() {
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [sourceConfigModal, setSourceConfigModal] = useState<SourceConfigModalState | null>(null);
-  const [globalSettingsDraft, setGlobalSettingsDraft] = useState<ParsingSettings | null>(null);
 
   const notebooks = useQuery({ queryKey: ['notebooks'], queryFn: api.listNotebooks });
   const sources = useQuery({ queryKey: ['sources', notebookId], queryFn: () => api.listSources(notebookId) });
@@ -58,11 +57,6 @@ export default function NotebookWorkspacePage() {
   const notes = useQuery({ queryKey: ['notes', notebookId], queryFn: () => api.listNotes(notebookId) });
   const parsingSettings = useQuery({ queryKey: ['parsing-settings', notebookId], queryFn: () => api.getParsingSettings(notebookId) });
 
-  useEffect(() => {
-    if (parsingSettings.data) {
-      setGlobalSettingsDraft(parsingSettings.data);
-    }
-  }, [parsingSettings.data]);
 
   const uploadSource = useMutation({
     mutationFn: (file: File) => api.uploadSource(notebookId, file),
@@ -87,11 +81,6 @@ export default function NotebookWorkspacePage() {
   const updateSource = useMutation({
     mutationFn: ({ sourceId, payload }: { sourceId: string; payload: { is_enabled?: boolean; individual_config?: { chunk_size: number | null; chunk_overlap: number | null; ocr_enabled: boolean | null; ocr_language: string | null } } }) => api.updateSource(sourceId, payload),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sources', notebookId] }),
-  });
-
-  const updateGlobalSettings = useMutation({
-    mutationFn: (payload: ParsingSettings) => api.updateParsingSettings(notebookId, payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['parsing-settings', notebookId] }),
   });
 
   const deleteAllFiles = useMutation({
@@ -382,54 +371,6 @@ export default function NotebookWorkspacePage() {
           </div>
           {!rightCollapsed ? (
             <div className="h-full overflow-auto p-3 space-y-3">
-              <div className="rounded border border-slate-200 p-3 space-y-2">
-                <p className="text-sm font-semibold">Глобальные настройки парсинга</p>
-                <label className="text-xs block">
-                  Chunk size
-                  <input
-                    className="mt-1 w-full rounded border p-1"
-                    value={globalSettingsDraft?.chunk_size ?? 512}
-                    onChange={(e) => setGlobalSettingsDraft((prev) => ({ ...(prev ?? parsingSettings.data), chunk_size: Number(e.target.value) }))}
-                    type="number"
-                  />
-                </label>
-                <label className="text-xs block">
-                  Chunk overlap
-                  <input
-                    className="mt-1 w-full rounded border p-1"
-                    value={globalSettingsDraft?.chunk_overlap ?? 64}
-                    onChange={(e) => setGlobalSettingsDraft((prev) => ({ ...(prev ?? parsingSettings.data), chunk_overlap: Number(e.target.value) }))}
-                    type="number"
-                  />
-                </label>
-                <label className="text-xs block">
-                  OCR language
-                  <input
-                    className="mt-1 w-full rounded border p-1"
-                    value={globalSettingsDraft?.ocr_language ?? 'rus+eng'}
-                    onChange={(e) => setGlobalSettingsDraft((prev) => ({ ...(prev ?? parsingSettings.data), ocr_language: e.target.value }))}
-                  />
-                </label>
-                <label className="text-xs inline-flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={globalSettingsDraft?.ocr_enabled ?? true}
-                    onChange={(e) => setGlobalSettingsDraft((prev) => ({ ...(prev ?? parsingSettings.data), ocr_enabled: e.target.checked }))}
-                  />
-                  OCR enabled
-                </label>
-                <button
-                  type="button"
-                  className="rounded border border-slate-300 px-2 py-1 text-xs"
-                  onClick={() => {
-                    if (globalSettingsDraft) {
-                      updateGlobalSettings.mutate(globalSettingsDraft);
-                    }
-                  }}
-                >
-                  Сохранить глобальные
-                </button>
-              </div>
               <EvidencePanel citations={citations} notes={notes.data} sources={sources.data} />
             </div>
           ) : null}
