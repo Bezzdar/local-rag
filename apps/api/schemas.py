@@ -26,6 +26,28 @@ class Source(BaseModel):
     size_bytes: int
     status: Literal["new", "indexing", "indexed", "failed"]
     added_at: str
+    is_enabled: bool = True
+    has_docs: bool = True
+    has_parsing: bool = False
+    has_base: bool = False
+    individual_config: dict[str, int | bool | str | None] = Field(
+        default_factory=lambda: {
+            "chunk_size": None,
+            "chunk_overlap": None,
+            "ocr_enabled": None,
+            "ocr_language": None,
+        }
+    )
+
+
+
+
+class ParsingSettings(BaseModel):
+    chunk_size: int = 512
+    chunk_overlap: int = 64
+    min_chunk_size: int = 50
+    ocr_enabled: bool = True
+    ocr_language: str = "rus+eng"
 
 
 class ChatMessage(BaseModel):
@@ -85,6 +107,11 @@ class UpdateNotebookRequest(BaseModel):
 
 class AddPathRequest(BaseModel):
     path: str
+
+
+class UpdateSourceRequest(BaseModel):
+    is_enabled: bool | None = None
+    individual_config: dict[str, int | bool | str | None] | None = None
 
 
 class CreateNoteRequest(BaseModel):

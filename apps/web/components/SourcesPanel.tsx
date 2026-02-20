@@ -16,7 +16,15 @@ type Props = {
   onDeleteAllSources: () => void;
   onDeleteUnselectedSources: () => void;
   onUpload: (file: File) => void;
+  onToggleEnabled: (source: Source, enabled: boolean) => void;
+  onEraseSource: (source: Source) => void;
+  onOpenConfig: (source: Source) => void;
+  onDeleteSource: (source: Source) => void;
 };
+
+function Lamp({ label, active }: { label: string; active: boolean }) {
+  return <span className={`font-semibold ${active ? 'text-emerald-600' : 'text-slate-400'}`}>{label}</span>;
+}
 
 export default function SourcesPanel(props: Props) {
   const [search, setSearch] = useState('');
@@ -99,17 +107,39 @@ export default function SourcesPanel(props: Props) {
       <div className="space-y-2 max-h-[55vh] overflow-auto">
         {visibleSources.length === 0 ? <p className="text-sm text-slate-500">Нет источников</p> : null}
         {visibleSources.map((source) => (
-          <label key={source.id} className="flex gap-2 rounded border border-slate-200 p-2">
-            <input
-              type="checkbox"
-              checked={props.selectedSourceIds.includes(source.id)}
-              onChange={() => props.onToggleSource(source.id)}
-            />
-            <div>
-              <p className="text-sm font-medium break-all">{source.filename}</p>
-              <span className="inline-block rounded bg-slate-100 px-2 py-0.5 text-xs">{source.status}</span>
+          <div key={source.id} className="rounded border border-slate-200 p-2 space-y-2">
+            <div className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={props.selectedSourceIds.includes(source.id)}
+                onChange={() => props.onToggleSource(source.id)}
+              />
+              <p className="text-sm font-medium break-all flex-1">{source.filename}</p>
+              <input
+                type="checkbox"
+                checked={source.is_enabled ?? true}
+                onChange={(e) => props.onToggleEnabled(source, e.target.checked)}
+                title="Вкл/выкл документа"
+              />
             </div>
-          </label>
+            <div className="flex items-center justify-between">
+              <div className="flex gap-3 text-xl leading-none">
+                <Lamp label="d" active={source.has_docs ?? false} />
+                <Lamp label="p" active={source.has_parsing ?? false} />
+                <Lamp label="b" active={source.has_base ?? false} />
+              </div>
+              <div className="flex gap-1">
+                <button type="button" className="rounded border px-2 text-xs" onClick={() => props.onOpenConfig(source)}>⚙</button>
+                <button type="button" className="rounded border border-red-300 px-2 text-xs text-red-600" onClick={() => props.onDeleteSource(source)}>
+                  🗑
+                </button>
+                <button type="button" className="rounded border border-amber-300 px-2 text-xs text-amber-700" onClick={() => props.onEraseSource(source)}>
+                  ✖
+                </button>
+              </div>
+            </div>
+            <span className="inline-block rounded bg-slate-100 px-2 py-0.5 text-xs">{source.status}</span>
+          </div>
         ))}
       </div>
     </aside>

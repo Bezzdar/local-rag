@@ -169,7 +169,7 @@ def test_force_fallback_small_upload_works() -> None:
             os.environ['FORCE_FALLBACK_MULTIPART'] = previous
 
 
-def test_delete_source_removes_file_and_index_blocks() -> None:
+def test_delete_source_removes_only_docs_file() -> None:
     notebook_id = _first_notebook_id()
     upload = client.post(
         f'/api/notebooks/{notebook_id}/sources/upload',
@@ -185,6 +185,21 @@ def test_delete_source_removes_file_and_index_blocks() -> None:
     assert delete.status_code == 204
 
     assert not Path(source['file_path']).exists()
+    assert any(item.get('source_id') == source['id'] for item in get_notebook_blocks(notebook_id))
+
+
+def test_erase_source_removes_parsing_and_index_blocks() -> None:
+    notebook_id = _first_notebook_id()
+    upload = client.post(
+        f'/api/notebooks/{notebook_id}/sources/upload',
+        files={'file': ('erase.txt', b'erase-content', 'text/plain')},
+    )
+    assert upload.status_code == 200
+    source = upload.json()
+
+    _wait_source_status(source['id'], 'indexed')
+    erase = client.delete(f"/api/sources/{source['id']}/erase")
+    assert erase.status_code == 204
     assert all(item.get('source_id') != source['id'] for item in get_notebook_blocks(notebook_id))
 
 

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from ..schemas import CreateNotebookRequest, IndexStatus, Notebook, UpdateNotebookRequest
+from ..schemas import CreateNotebookRequest, IndexStatus, Notebook, ParsingSettings, UpdateNotebookRequest
 from ..store import store
 
 router = APIRouter(prefix="/api", tags=["notebooks"])
@@ -47,3 +47,19 @@ def index_status(notebook_id: str) -> IndexStatus:
         indexing=sum(1 for source in items if source.status == "indexing"),
         failed=sum(1 for source in items if source.status == "failed"),
     )
+
+
+@router.get("/notebooks/{notebook_id}/parsing-settings", response_model=ParsingSettings)
+def get_parsing_settings(notebook_id: str) -> ParsingSettings:
+    notebook = store.notebooks.get(notebook_id)
+    if not notebook:
+        raise HTTPException(status_code=404, detail="Notebook not found")
+    return store.get_parsing_settings(notebook_id)
+
+
+@router.patch("/notebooks/{notebook_id}/parsing-settings", response_model=ParsingSettings)
+def update_parsing_settings(notebook_id: str, payload: ParsingSettings) -> ParsingSettings:
+    notebook = store.notebooks.get(notebook_id)
+    if not notebook:
+        raise HTTPException(status_code=404, detail="Notebook not found")
+    return store.update_parsing_settings(notebook_id, payload)
