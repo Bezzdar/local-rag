@@ -14,32 +14,50 @@ PACKAGES_ROOT = ROOT / "packages"
 if str(PACKAGES_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGES_ROOT))
 
-from ..config import BASE_DIR
 from .parse_service import DocumentParser, ParserConfig
+from .notebook_db import db_for_notebook
 
 try:
     from rag_core.app import engine as core_engine
 except Exception:  # noqa: BLE001
     core_engine = None
 
-INDEXED_BLOCKS: dict[str, list[dict[str, Any]]] = {}
 ENABLE_LEGACY_ENGINE = os.getenv("ENABLE_LEGACY_ENGINE", "0") == "1"
 
 
 # --- Основные блоки ---
 def get_notebook_blocks(notebook_id: str) -> list[dict[str, Any]]:
-    return INDEXED_BLOCKS.get(notebook_id, [])
+    notebook_db = db_for_notebook(notebook_id)
+    try:
+        rows = notebook_db.conn.execute(
+            """
+            SELECT c.chunk_id, c.doc_id, c.chunk_text, c.page_number, c.section_header,
+                   d.filepath
+            FROM chunks c
+            JOIN documents d ON d.doc_id=c.doc_id
+            """
+        ).fetchall()
+        return [
+            {
+                "source_id": row["doc_id"],
+                "source": row["filepath"],
+                "page": row["page_number"],
+                "section_id": row["chunk_id"],
+                "section_title": row["section_header"] or "__root__",
+                "text": row["chunk_text"],
+            }
+            for row in rows
+        ]
+    finally:
+        notebook_db.close()
 
 
 def remove_source_blocks(notebook_id: str, source_id: str) -> None:
-    notebook_blocks = INDEXED_BLOCKS.get(notebook_id)
-    if not notebook_blocks:
-        return
-    INDEXED_BLOCKS[notebook_id] = [item for item in notebook_blocks if item.get("source_id") != source_id]
+    return
 
 
 def clear_notebook_blocks(notebook_id: str) -> None:
-    INDEXED_BLOCKS.pop(notebook_id, None)
+    return
 
 
 async def index_source(
@@ -49,8 +67,8 @@ async def index_source(
     *,
     parser_config: dict[str, Any] | None = None,
     source_state: dict[str, Any] | None = None,
-) -> list[dict[str, Any]]:
-    """Parse and index one file; optional legacy engine run behind feature flag."""
+) -> tuple[Any, list[Any]]:
+    """Parse one file and return structured metadata/chunks."""
     path = Path(file_path)
     parser = DocumentParser(ParserConfig(**(parser_config or {})))
     metadata, chunks = parser.parse(
@@ -69,35 +87,10 @@ async def index_source(
         },
     )
 
-    converted = []
-    for block in chunks:
-        converted.append(
-            {
-                "source_id": source_id,
-                "source": str(path),
-                "page": block.page_number or 1,
-                "section_id": f"p{block.page_number or 1}.s{block.chunk_index + 1}",
-                "section_title": block.section_header or "__root__",
-                "text": block.text,
-                "type": block.chunk_type.value,
-                "is_enabled": metadata.is_enabled,
-                "doc_id": metadata.doc_id,
-            }
-        )
-
-    notebook_blocks = INDEXED_BLOCKS.setdefault(notebook_id, [])
-    notebook_blocks[:] = [item for item in notebook_blocks if item.get("source_id") != source_id]
-    notebook_blocks.extend(converted)
-
-    base_dir = BASE_DIR / notebook_id
-    base_dir.mkdir(parents=True, exist_ok=True)
-    base_marker = base_dir / f"{source_id}.json"
-    base_marker.write_text(str(len(converted)), encoding="utf-8")
-
     if ENABLE_LEGACY_ENGINE and core_engine is not None:
         try:
             await asyncio.to_thread(core_engine.trigger_indexing, notebook_id)
         except Exception:
             pass
 
-    return converted
+    return metadata, chunks

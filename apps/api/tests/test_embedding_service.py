@@ -43,7 +43,7 @@ def test_suggest_quantization_modes():
     assert 130 % big.pq_m == 0
 
 
-def test_process_document_moves_file_and_writes_outputs(tmp_path, monkeypatch):
+def test_process_document_keeps_file_by_default_and_writes_outputs(tmp_path, monkeypatch):
     monkeypatch.setattr("apps.api.services.embedding_service.EmbeddingClient", DummyClient)
 
     parsing_root = tmp_path / "parsing"
@@ -77,7 +77,7 @@ def test_process_document_moves_file_and_writes_outputs(tmp_path, monkeypatch):
 
     embedded = engine.process_document(notebook_id, doc_id)
     assert len(embedded) == 2
-    assert source.exists() is False
+    assert source.exists() is True
 
     out_file = base_root / notebook_id / "chunks" / f"{doc_id}.json"
     registry = base_root / notebook_id / "registry.json"
@@ -87,3 +87,21 @@ def test_process_document_moves_file_and_writes_outputs(tmp_path, monkeypatch):
     data = json.loads(out_file.read_text(encoding="utf-8"))
     assert data[0]["embedding_failed"] is False
     assert data[1]["embedding_failed"] is True
+
+
+def test_embed_document_from_parsing_returns_embedded_chunks(tmp_path, monkeypatch):
+    monkeypatch.setattr("apps.api.services.embedding_service.EmbeddingClient", DummyClient)
+
+    parsing_root = tmp_path / "parsing"
+    notebook_id = "nb1"
+    doc_id = "doc2"
+    (parsing_root / notebook_id).mkdir(parents=True)
+    source = parsing_root / notebook_id / f"{doc_id}.json"
+    source.write_text(json.dumps({"chunks": [{"text": "hello", "chunk_type": "text", "page_number": 1}]}), encoding="utf-8")
+
+    engine = EmbeddingEngine(
+        EmbeddingConfig(provider=EmbeddingProviderConfig(base_url="http://localhost:11434", model_name="dummy"), parsing_root=str(parsing_root))
+    )
+    embedded = engine.embed_document_from_parsing(notebook_id, doc_id)
+    assert len(embedded) == 1
+    assert source.exists() is True

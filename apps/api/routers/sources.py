@@ -150,6 +150,7 @@ def update_source(source_id: str, payload: UpdateSourceRequest) -> Source:
         raise HTTPException(status_code=404, detail="Source not found")
     if payload.is_enabled is not None:
         source.is_enabled = payload.is_enabled
+        store.sync_source_enabled(source_id, payload.is_enabled)
     if payload.individual_config is not None:
         source.individual_config = {
             "chunk_size": payload.individual_config.get("chunk_size"),

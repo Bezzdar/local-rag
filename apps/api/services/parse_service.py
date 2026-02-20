@@ -637,6 +637,7 @@ class DocumentParser:
 
 
 def extract_blocks(file_path: str | Path) -> list[dict]:
+    """Deprecated helper for ad-hoc extraction; not used in production indexing pipeline."""
     parser = DocumentParser(ParserConfig())
     metadata, chunks = parser.parse(str(file_path), "adhoc")
     return [
