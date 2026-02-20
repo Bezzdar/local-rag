@@ -1,10 +1,12 @@
 'use client';
 
+import { logClientEvent } from '@/lib/clientLogger';
 import { ChatMessage, Citation } from '@/types/dto';
 import { CHAT_MODE_OPTIONS, ChatMode } from '@/lib/sse';
 import { useState } from 'react';
 
 type Props = {
+  notebookId: string;
   mode: ChatMode;
   messages: ChatMessage[];
   streaming: string;
@@ -29,7 +31,10 @@ export default function ChatPanel(props: Props) {
         <div className="flex items-center gap-2">
           <button
             className="rounded border border-slate-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={props.onClearChat}
+            onClick={() => {
+              logClientEvent({ event: 'ui.clear_chat.click', notebookId: props.notebookId, metadata: { mode: props.mode } });
+              props.onClearChat();
+            }}
             disabled={props.disableClearChat}
             title={props.disableClearChat ? props.clearDisabledReason ?? 'Очистка в процессе…' : undefined}
           >
@@ -38,7 +43,11 @@ export default function ChatPanel(props: Props) {
           <select
             className="rounded border border-slate-300 p-2 text-sm"
             value={props.mode}
-            onChange={(event) => props.onModeChange(event.target.value as ChatMode)}
+            onChange={(event) => {
+              const nextMode = event.target.value as ChatMode;
+              logClientEvent({ event: 'ui.chat_mode.change', notebookId: props.notebookId, metadata: { from: props.mode, to: nextMode } });
+              props.onModeChange(nextMode);
+            }}
           >
             {CHAT_MODE_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -78,6 +87,7 @@ export default function ChatPanel(props: Props) {
             if (!text || props.disableSend) {
               return;
             }
+            logClientEvent({ event: 'ui.send.click', notebookId: props.notebookId, metadata: { length: text.length, mode: props.mode } });
             props.onSend(text);
             setInput('');
           }}
@@ -88,8 +98,14 @@ export default function ChatPanel(props: Props) {
 
       {props.streaming ? (
         <div className="flex items-center gap-2 text-xs">
-          <button className="rounded border px-2 py-1" onClick={() => navigator.clipboard.writeText(props.streaming)}>Copy</button>
-          <button className="rounded border px-2 py-1" onClick={() => props.onSaveToNotes(props.streaming)}>Save to Notes</button>
+          <button className="rounded border px-2 py-1" onClick={() => {
+            logClientEvent({ event: 'ui.streaming.copy', notebookId: props.notebookId, metadata: { length: props.streaming.length } });
+            navigator.clipboard.writeText(props.streaming);
+          }}>Copy</button>
+          <button className="rounded border px-2 py-1" onClick={() => {
+            logClientEvent({ event: 'ui.save_to_notes.click', notebookId: props.notebookId, metadata: { length: props.streaming.length } });
+            props.onSaveToNotes(props.streaming);
+          }}>Save to Notes</button>
           <span className="text-slate-500">Citations: {props.citations.length}</span>
         </div>
       ) : null}

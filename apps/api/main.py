@@ -1,9 +1,14 @@
-from fastapi import FastAPI
+import logging
+import time
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import chat, llm, notebooks, notes, sources
+from .logging_setup import setup_logging
+from .routers import chat, client_events, llm, notebooks, notes, sources
 
 app = FastAPI(title="Local RAG Assistant API")
+logger = logging.getLogger(__name__)
 
 app.add_middleware(
     CORSMiddleware,
@@ -18,6 +23,42 @@ app.include_router(sources.router)
 app.include_router(chat.router)
 app.include_router(notes.router)
 app.include_router(llm.router)
+app.include_router(client_events.router)
+
+
+@app.on_event("startup")
+def on_startup() -> None:
+    log_file = setup_logging()
+    logger.info("Application startup completed", extra={"event": "app.ready", "details": f"log_file={log_file}"})
+
+
+@app.middleware("http")
+async def http_logging_middleware(request: Request, call_next):
+    started = time.perf_counter()
+    client_ip = request.client.host if request.client else "-"
+    logger.info(
+        "HTTP request started",
+        extra={
+            "event": "http.request.start",
+            "method": request.method,
+            "path": request.url.path,
+            "client_ip": client_ip,
+        },
+    )
+    response = await call_next(request)
+    duration_ms = round((time.perf_counter() - started) * 1000, 2)
+    logger.info(
+        "HTTP request completed",
+        extra={
+            "event": "http.request.end",
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "duration_ms": duration_ms,
+            "client_ip": client_ip,
+        },
+    )
+    return response
 
 
 @app.get("/")

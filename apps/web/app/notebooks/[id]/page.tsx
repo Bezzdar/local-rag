@@ -5,6 +5,7 @@ import ConnectionIndicator from '@/components/ConnectionIndicator';
 import EvidencePanel from '@/components/EvidencePanel';
 import SourcesPanel from '@/components/SourcesPanel';
 import { api, CitationsSchema } from '@/lib/api';
+import { logClientEvent } from '@/lib/clientLogger';
 import { ChatMode, openChatStream } from '@/lib/sse';
 import { getRuntimeConfig } from '@/lib/runtime-config';
 import { Citation, Source } from '@/types/dto';
@@ -150,6 +151,7 @@ export default function NotebookWorkspacePage() {
   );
 
   const sendMessage = (text: string) => {
+    logClientEvent({ event: 'ui.message.send_attempt', notebookId, metadata: { length: text.length, mode: currentMode } });
     if (isClearing || clearChat.isPending) {
       return;
     }
@@ -211,6 +213,7 @@ export default function NotebookWorkspacePage() {
   };
 
   const handleToggleSource = (sourceId: string) => {
+    logClientEvent({ event: 'ui.source.toggle', notebookId, metadata: { sourceId } });
     setExplicitSelection((current) => {
       const baseSelection = current ?? allSourceIds;
       return baseSelection.includes(sourceId)
@@ -220,6 +223,7 @@ export default function NotebookWorkspacePage() {
   };
 
   const handleDeleteSources = (sourceIds: string[], confirmText: string) => {
+    logClientEvent({ event: 'ui.sources.delete_requested', notebookId, metadata: { count: sourceIds.length } });
     if (sourceIds.length === 0 || deleteSources.isPending) {
       return;
     }
@@ -277,7 +281,10 @@ export default function NotebookWorkspacePage() {
             <button
               type="button"
               className="rounded border border-slate-300 px-2 py-1 text-xs"
-              onClick={() => setLeftCollapsed((value) => !value)}
+              onClick={() => {
+                logClientEvent({ event: 'ui.left_panel.toggle', notebookId, metadata: { collapsed: !leftCollapsed } });
+                setLeftCollapsed((value) => !value);
+              }}
               aria-label={leftCollapsed ? 'Развернуть левую панель' : 'Свернуть левую панель'}
             >
               {leftCollapsed ? '⟩' : '⟨'}
@@ -334,6 +341,7 @@ export default function NotebookWorkspacePage() {
         />
 
         <ChatPanel
+          notebookId={notebookId}
           mode={currentMode}
           messages={messages.data}
           streaming={streaming}
@@ -347,6 +355,7 @@ export default function NotebookWorkspacePage() {
           onClearChat={() => {
             closeStreamRef.current?.();
             closeStreamRef.current = null;
+            logClientEvent({ event: 'ui.clear_chat.confirmed', notebookId });
             clearChat.mutate();
           }}
           onSaveToNotes={(content) => createNote.mutate({ title: 'Из чата', content })}
@@ -363,7 +372,10 @@ export default function NotebookWorkspacePage() {
             <button
               type="button"
               className="rounded border border-slate-300 px-2 py-1 text-xs"
-              onClick={() => setRightCollapsed((value) => !value)}
+              onClick={() => {
+                logClientEvent({ event: 'ui.right_panel.toggle', notebookId, metadata: { collapsed: !rightCollapsed } });
+                setRightCollapsed((value) => !value);
+              }}
               aria-label={rightCollapsed ? 'Развернуть правую панель' : 'Свернуть правую панель'}
             >
               {rightCollapsed ? '⟨' : '⟩'}
