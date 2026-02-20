@@ -1,3 +1,5 @@
+"""Оркестрация полного RAG-контура legacy-ядра."""
+
 # engine.py — high‑level indexing API
 # ---------------------------------------------------------------------------
 # Обновлён 2025‑06‑04 | ChatGPT‑o3 refactor
@@ -8,6 +10,7 @@
 #   • Унификация фильтров файлов и одноразовая загрузка моделей
 # ---------------------------------------------------------------------------
 
+# --- Imports ---
 from __future__ import annotations
 
 import logging
@@ -43,6 +46,7 @@ FILE_SKIP_NAMES = {"thumbs.db", ".ds_store"}
 # Helpers
 # ---------------------------------------------------------------------------
 
+# --- Основные блоки ---
 def _safe_collection_name(name: str) -> str:
     """Convert arbitrary folder name → ASCII‑slug valid for Chroma."""
     slug: str = slugify(name, lowercase=True, separator="_")[:63].strip("._-")

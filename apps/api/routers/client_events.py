@@ -1,3 +1,6 @@
+"""Роуты приёма клиентских событий."""
+
+# --- Imports ---
 from __future__ import annotations
 
 import logging
@@ -10,6 +13,7 @@ router = APIRouter(prefix="/api", tags=["logs"])
 logger = logging.getLogger(__name__)
 
 
+# --- Основные блоки ---
 class ClientEventPayload(BaseModel):
     event: str = Field(min_length=1, max_length=120)
     source: str = Field(default="web", max_length=40)

@@ -1,3 +1,6 @@
+"""In-memory хранилище и оркестрация сущностей/индексации."""
+
+# --- Imports ---
 from __future__ import annotations
 
 import asyncio
@@ -16,6 +19,7 @@ CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
 DEMO_NOTEBOOK_ID = "00000000-0000-0000-0000-000000000001"
 
 
+# --- Основные блоки ---
 class InMemoryStore:
     def __init__(self) -> None:
         self.notebooks: dict[str, Notebook] = {}

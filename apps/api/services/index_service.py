@@ -1,3 +1,6 @@
+"""Сервис сборки и обновления поискового индекса."""
+
+# --- Imports ---
 from __future__ import annotations
 
 import asyncio
@@ -23,6 +26,7 @@ INDEXED_BLOCKS: dict[str, list[dict[str, Any]]] = {}
 ENABLE_LEGACY_ENGINE = os.getenv("ENABLE_LEGACY_ENGINE", "0") == "1"
 
 
+# --- Основные блоки ---
 def get_notebook_blocks(notebook_id: str) -> list[dict[str, Any]]:
     return INDEXED_BLOCKS.get(notebook_id, [])
 

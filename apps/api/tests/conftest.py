@@ -1,3 +1,6 @@
+"""Общие фикстуры и конфигурация pytest для backend."""
+
+# --- Imports ---
 from pathlib import Path
 import sys
 

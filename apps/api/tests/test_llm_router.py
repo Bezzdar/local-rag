@@ -1,3 +1,6 @@
+"""Тесты маршрутов LLM API."""
+
+# --- Imports ---
 from fastapi.testclient import TestClient
 
 from apps.api.main import app
@@ -6,6 +9,7 @@ from apps.api.routers import llm
 client = TestClient(app)
 
 
+# --- Основные блоки ---
 class DummyResponse:
     def __init__(self, payload: dict):
         self._payload = payload

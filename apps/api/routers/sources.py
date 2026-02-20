@@ -1,3 +1,6 @@
+"""Роуты загрузки, удаления и индексации источников."""
+
+# --- Imports ---
 from __future__ import annotations
 
 import importlib.util
@@ -16,6 +19,7 @@ router = APIRouter(prefix="/api", tags=["sources"])
 HAS_MULTIPART = importlib.util.find_spec("multipart") is not None
 
 
+# --- Основные блоки ---
 def _sanitize_filename(filename: str) -> str:
     cleaned = Path(filename or "upload.bin").name
     return cleaned or "upload.bin"

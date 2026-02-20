@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
+# Скрипт сквозной backend-проверки: тесты, запуск API и smoke-сценарии.
 set -euo pipefail
 
+# --- Инициализация окружения ---
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
@@ -11,6 +13,7 @@ NOTEBOOK_IDS=()
 
 log() { echo "[verify] $*"; }
 
+# --- Утилиты проверки файлов/доступности API ---
 sha256_file() {
   python - "$1" <<'PY'
 import hashlib,sys
@@ -58,6 +61,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# --- Этапы верификации ---
 log "1) compileall"
 python -m compileall apps/api packages/rag_core
 

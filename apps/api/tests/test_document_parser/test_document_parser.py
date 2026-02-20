@@ -1,3 +1,6 @@
+"""Тесты парсинга документов."""
+
+# --- Imports ---
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,6 +11,7 @@ from apps.api.services.parse_service import ChunkType, DocumentParser, ParserCon
 from apps.api.store import InMemoryStore
 
 
+# --- Основные блоки ---
 def test_parse_text_pdf(tmp_path: Path) -> None:
     fitz = pytest.importorskip("fitz")
     pdf_path = tmp_path / "text.pdf"

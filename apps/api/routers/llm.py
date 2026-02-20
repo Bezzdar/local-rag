@@ -1,3 +1,6 @@
+"""Роуты управления LLM-конфигурацией и диагностикой."""
+
+# --- Imports ---
 from fastapi import APIRouter, HTTPException, Query
 import httpx
 
@@ -25,6 +28,7 @@ EMBEDDING_HINT_KEYWORDS = (
 )
 
 
+# --- Основные блоки ---
 def _is_chat_model(model_name: str) -> bool:
     normalized = model_name.strip().lower()
     if not normalized:

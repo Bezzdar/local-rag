@@ -7,6 +7,8 @@
 •  Пустой ввод возвращает [] без падения
 Публичный API segment_and_lemmatize(text) НЕ менялся
 """
+
+# --- Imports ---
 from __future__ import annotations
 
 import logging
@@ -19,6 +21,7 @@ from razdel import sentenize
 logger = logging.getLogger(__name__)
 
 
+# --- Основные блоки ---
 @lru_cache(maxsize=1)
 def _get_models() -> tuple[Segmenter, MorphVocab, NewsMorphTagger]:
     """Lazily create & cache heavy Natasha objects."""

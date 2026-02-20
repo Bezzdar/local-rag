@@ -1,3 +1,5 @@
+# Зависимости Python-окружения для FastAPI backend.
+
 fastapi==0.115.4
 uvicorn==0.32.0
 python-multipart==0.0.12

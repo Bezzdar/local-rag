@@ -1,3 +1,6 @@
+"""Настройка структуры и вывода логирования."""
+
+# --- Imports ---
 from __future__ import annotations
 
 import logging
@@ -10,6 +13,7 @@ LOG_DIR = DATA_DIR / "logs"
 LOG_FILE = LOG_DIR / "app.log"
 
 
+# --- Основные блоки ---
 class SafeExtraFormatter(logging.Formatter):
     """Formatter with stable keys even when `extra` is absent."""
 

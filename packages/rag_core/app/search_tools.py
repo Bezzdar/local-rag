@@ -11,6 +11,8 @@
     tfidf_search(texts: list[str], query: str, top_k: int = 5) -> list[tuple[int, float]]
     semantic_rerank(texts: list[str], query: str, top_k: int = 5) -> list[tuple[int, float]]
 """
+
+# --- Imports ---
 from __future__ import annotations
 
 import hashlib
@@ -33,6 +35,7 @@ logger.addHandler(logging.NullHandler())
 # ---------------------------------------------------------------------------
 
 
+# --- Основные блоки ---
 @lru_cache(maxsize=1)
 def _get_sentence_model(model_name: str = "all-MiniLM-L6-v2") -> SentenceTransformer:
     """Загрузка SentenceTransformer только один раз на процесс."""

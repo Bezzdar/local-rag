@@ -6,6 +6,7 @@ The graph is intentionally compact and dependency-free:
 - expansion is used for retrieval-time query broadening
 """
 
+# --- Imports ---
 from __future__ import annotations
 
 from collections import deque
@@ -54,6 +55,7 @@ TERM_GRAPH: dict[str, dict[str, str]] = {
 }
 
 
+# --- Основные блоки ---
 def norm_term(term: str) -> str:
     return term.strip().lower().replace("ё", "е")
 

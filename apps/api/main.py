@@ -1,3 +1,6 @@
+"""Точка входа FastAPI-приложения и регистрация middleware/роутеров."""
+
+# --- Imports ---
 import logging
 import time
 
@@ -26,6 +29,7 @@ app.include_router(llm.router)
 app.include_router(client_events.router)
 
 
+# --- Основные блоки ---
 @app.on_event("startup")
 def on_startup() -> None:
     log_file = setup_logging()

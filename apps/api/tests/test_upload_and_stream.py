@@ -1,3 +1,6 @@
+"""Тесты загрузки источников и SSE-стриминга."""
+
+# --- Imports ---
 import json
 import os
 import time
@@ -13,6 +16,7 @@ from apps.api.services.index_service import get_notebook_blocks
 client = TestClient(app)
 
 
+# --- Основные блоки ---
 def _first_notebook_id() -> str:
     response = client.get('/api/notebooks')
     response.raise_for_status()

@@ -7,6 +7,8 @@
 •   Логирование исключений при отсутствии модели / пустой вход
 •   Чёткие type hints + docstring
 """
+
+# --- Imports ---
 from __future__ import annotations
 
 import logging
@@ -23,6 +25,7 @@ except ImportError as exc:  # pragma: no cover
     logger.warning("Natasha is not installed: `pip install natasha` — %s", exc)
 
 
+# --- Основные блоки ---
 @lru_cache(maxsize=1)
 def _get_extractor() -> "NamesExtractor":  # type: ignore[name-defined]
     """Ленивая загрузка *NamesExtractor* (кэшируется в процессе)."""

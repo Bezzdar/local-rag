@@ -1,8 +1,12 @@
+"""Асинхронные помощники retrieval-поиска."""
+
+# --- Imports ---
 import asyncio
 from typing import Any, Sequence
 
 import aiohttp
 
+# --- Основные блоки ---
 class RemoteLibraryAsync:
     def __init__(self, api_url: str, token: str | None = None, timeout_s: float = 10.0):
         self.api_url = api_url

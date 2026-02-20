@@ -1,10 +1,14 @@
+"""Математические утилиты ранжирования и анализа."""
+
 # app/math_engine.py
 
+# --- Imports ---
 import subprocess
 import tempfile
 import os
 import shutil
 
+# --- Основные блоки ---
 def run_python_code(code: str, files: dict = None, timeout: int = 20):
     """
     Выполнить пользовательский Python-код в песочнице.

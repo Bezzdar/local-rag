@@ -1,3 +1,6 @@
+"""Сервис retrieval-поиска и подготовки цитат."""
+
+# --- Imports ---
 from __future__ import annotations
 
 from pathlib import Path
@@ -15,6 +18,7 @@ from .index_service import get_notebook_blocks
 core_run_fast_search = None
 
 
+# --- Основные блоки ---
 def _query_to_groups(query: str) -> dict[str, list[str]]:
     terms = [token for token in re.findall(r"[\w\-]+", query.lower()) if len(token) > 1]
     return {"AND": terms[:6], "OR": [], "NOT": []}

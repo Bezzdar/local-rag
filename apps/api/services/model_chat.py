@@ -1,3 +1,6 @@
+"""Сервис генерации ответов на основе модели/шаблонов."""
+
+# --- Imports ---
 from __future__ import annotations
 
 import json
@@ -16,6 +19,7 @@ DEBUG_MODEL_MODE = os.getenv("DEBUG_MODEL_MODE", "0") == "1"
 logger = logging.getLogger(__name__)
 
 
+# --- Основные блоки ---
 def _normalize_provider(provider: str) -> str:
     return (provider or "none").strip().lower()
 

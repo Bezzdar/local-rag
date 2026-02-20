@@ -1,3 +1,6 @@
+"""Роуты заметок пользователя."""
+
+# --- Imports ---
 from fastapi import APIRouter, HTTPException
 
 from ..schemas import CreateNoteRequest, Note, UpdateNoteRequest
@@ -6,6 +9,7 @@ from ..store import store
 router = APIRouter(prefix="/api", tags=["notes"])
 
 
+# --- Основные блоки ---
 @router.get("/notebooks/{notebook_id}/notes", response_model=list[Note])
 def list_notes(notebook_id: str) -> list[Note]:
     return store.notes.get(notebook_id, [])
