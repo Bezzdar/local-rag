@@ -26,8 +26,54 @@ export const api = {
     }
   },
   listSources: (notebookId: string) => request(`/api/notebooks/${notebookId}/sources`, { method: 'GET' }, z.array(SourceSchema)),
+  getParsingSettings: (notebookId: string) =>
+    request(
+      `/api/notebooks/${notebookId}/parsing-settings`,
+      { method: 'GET' },
+      z.object({ chunk_size: z.number(), chunk_overlap: z.number(), min_chunk_size: z.number(), ocr_enabled: z.boolean(), ocr_language: z.string() }),
+    ),
+  updateParsingSettings: (
+    notebookId: string,
+    payload: { chunk_size: number; chunk_overlap: number; min_chunk_size: number; ocr_enabled: boolean; ocr_language: string },
+  ) =>
+    request(
+      `/api/notebooks/${notebookId}/parsing-settings`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) },
+      z.object({ chunk_size: z.number(), chunk_overlap: z.number(), min_chunk_size: z.number(), ocr_enabled: z.boolean(), ocr_language: z.string() }),
+    ),
   deleteSource: async (sourceId: string) => {
     const response = await fetch(`${apiBase}/api/sources/${sourceId}`, { method: 'DELETE' });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+  },
+  reparseSource: (sourceId: string) =>
+    request(`/api/sources/${sourceId}/reparse`, { method: 'POST' }, SourceSchema),
+  eraseSource: async (sourceId: string) => {
+    const response = await fetch(`${apiBase}/api/sources/${sourceId}/erase`, { method: 'DELETE' });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+  },
+  updateSource: (
+    sourceId: string,
+    payload: {
+      is_enabled?: boolean;
+      individual_config?: {
+        chunk_size: number | null;
+        chunk_overlap: number | null;
+        ocr_enabled: boolean | null;
+        ocr_language: string | null;
+      };
+    },
+  ) =>
+    request(
+      `/api/sources/${sourceId}`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) },
+      SourceSchema,
+    ),
+  deleteAllSourceFiles: async (notebookId: string) => {
+    const response = await fetch(`${apiBase}/api/notebooks/${notebookId}/sources/files`, { method: 'DELETE' });
     if (!response.ok) {
       throw new Error(await response.text());
     }

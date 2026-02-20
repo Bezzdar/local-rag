@@ -16,6 +16,18 @@ export const SourceSchema = z.object({
   size_bytes: z.number(),
   status: z.enum(['new', 'indexing', 'indexed', 'failed']),
   added_at: z.string(),
+  is_enabled: z.boolean().optional(),
+  has_docs: z.boolean().optional(),
+  has_parsing: z.boolean().optional(),
+  has_base: z.boolean().optional(),
+  individual_config: z
+    .object({
+      chunk_size: z.number().nullable(),
+      chunk_overlap: z.number().nullable(),
+      ocr_enabled: z.boolean().nullable(),
+      ocr_language: z.string().nullable(),
+    })
+    .optional(),
 });
 
 export const ChatMessageSchema = z.object({
@@ -53,3 +65,14 @@ export type Source = z.infer<typeof SourceSchema>;
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export type Citation = z.infer<typeof CitationSchema>;
 export type Note = z.infer<typeof NoteSchema>;
+
+
+export const ParsingSettingsSchema = z.object({
+  chunk_size: z.number(),
+  chunk_overlap: z.number(),
+  min_chunk_size: z.number(),
+  ocr_enabled: z.boolean(),
+  ocr_language: z.string(),
+});
+
+export type ParsingSettings = z.infer<typeof ParsingSettingsSchema>;

@@ -7,7 +7,7 @@ import SourcesPanel from '@/components/SourcesPanel';
 import { api, CitationsSchema } from '@/lib/api';
 import { ChatMode, openChatStream } from '@/lib/sse';
 import { getRuntimeConfig } from '@/lib/runtime-config';
-import { Citation } from '@/types/dto';
+import { Citation, ParsingSettings, Source } from '@/types/dto';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -19,6 +19,18 @@ const LEFT_MIN = 240;
 const LEFT_MAX = 520;
 const RIGHT_MIN = 280;
 const RIGHT_MAX = 640;
+
+type SourceConfigModalState = {
+  source: Source;
+  useGlobalChunkSize: boolean;
+  useGlobalOverlap: boolean;
+  useGlobalOcrEnabled: boolean;
+  useGlobalOcrLanguage: boolean;
+  chunkSize: string;
+  chunkOverlap: string;
+  ocrEnabled: boolean;
+  ocrLanguage: string;
+};
 
 export default function NotebookWorkspacePage() {
   const params = useParams<{ id: string }>();
@@ -37,11 +49,20 @@ export default function NotebookWorkspacePage() {
   const [rightWidth, setRightWidth] = useState(360);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [sourceConfigModal, setSourceConfigModal] = useState<SourceConfigModalState | null>(null);
+  const [globalSettingsDraft, setGlobalSettingsDraft] = useState<ParsingSettings | null>(null);
 
   const notebooks = useQuery({ queryKey: ['notebooks'], queryFn: api.listNotebooks });
   const sources = useQuery({ queryKey: ['sources', notebookId], queryFn: () => api.listSources(notebookId) });
   const messages = useQuery({ queryKey: ['messages', notebookId], queryFn: () => api.listMessages(notebookId) });
   const notes = useQuery({ queryKey: ['notes', notebookId], queryFn: () => api.listNotes(notebookId) });
+  const parsingSettings = useQuery({ queryKey: ['parsing-settings', notebookId], queryFn: () => api.getParsingSettings(notebookId) });
+
+  useEffect(() => {
+    if (parsingSettings.data) {
+      setGlobalSettingsDraft(parsingSettings.data);
+    }
+  }, [parsingSettings.data]);
 
   const uploadSource = useMutation({
     mutationFn: (file: File) => api.uploadSource(notebookId, file),
@@ -50,6 +71,31 @@ export default function NotebookWorkspacePage() {
 
   const deleteSources = useMutation({
     mutationFn: (sourceIds: string[]) => Promise.all(sourceIds.map((sourceId) => api.deleteSource(sourceId))),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sources', notebookId] }),
+  });
+
+  const eraseSource = useMutation({
+    mutationFn: (sourceId: string) => api.eraseSource(sourceId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sources', notebookId] }),
+  });
+
+  const reparseSource = useMutation({
+    mutationFn: (sourceId: string) => api.reparseSource(sourceId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sources', notebookId] }),
+  });
+
+  const updateSource = useMutation({
+    mutationFn: ({ sourceId, payload }: { sourceId: string; payload: { is_enabled?: boolean; individual_config?: { chunk_size: number | null; chunk_overlap: number | null; ocr_enabled: boolean | null; ocr_language: string | null } } }) => api.updateSource(sourceId, payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sources', notebookId] }),
+  });
+
+  const updateGlobalSettings = useMutation({
+    mutationFn: (payload: ParsingSettings) => api.updateParsingSettings(notebookId, payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['parsing-settings', notebookId] }),
+  });
+
+  const deleteAllFiles = useMutation({
+    mutationFn: () => api.deleteAllSourceFiles(notebookId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sources', notebookId] }),
   });
 
@@ -81,7 +127,7 @@ export default function NotebookWorkspacePage() {
     },
   });
 
-  const allSourceIds = useMemo(() => sources.data?.map((source) => source.id) ?? [], [sources.data]);
+  const allSourceIds = useMemo(() => sources.data?.filter((source) => source.is_enabled ?? true).map((source) => source.id) ?? [], [sources.data]);
 
   const selectedSourceIds = useMemo(() => {
     if (!sources.data) {
@@ -125,7 +171,6 @@ export default function NotebookWorkspacePage() {
     const streamStartedAt = Date.now();
     const streamId = `${notebookId}-${streamStartedAt}`;
 
-    // Model mode must always use direct LLM path on backend (no retrieval branch).
     const streamMode: ChatMode = currentMode === 'model' ? 'model' : currentMode;
     const runtimeConfig = getRuntimeConfig();
     if (runtimeConfig.debugModelMode) {
@@ -225,10 +270,10 @@ export default function NotebookWorkspacePage() {
     window.addEventListener('mouseup', stop);
   };
 
-  if (notebooks.isLoading || sources.isLoading || messages.isLoading || notes.isLoading) {
+  if (notebooks.isLoading || sources.isLoading || messages.isLoading || notes.isLoading || parsingSettings.isLoading) {
     return <div className="p-6">Loading workspace...</div>;
   }
-  if (notebooks.isError || sources.isError || messages.isError || notes.isError || !notebooks.data || !sources.data || !messages.data || !notes.data) {
+  if (notebooks.isError || sources.isError || messages.isError || notes.isError || parsingSettings.isError || !notebooks.data || !sources.data || !messages.data || !notes.data || !parsingSettings.data) {
     return <div className="p-6">Failed to load notebook workspace.</div>;
   }
 
@@ -259,14 +304,36 @@ export default function NotebookWorkspacePage() {
               onToggleSource={handleToggleSource}
               onSelectAllSources={() => setExplicitSelection(allSourceIds)}
               onClearSourceSelection={() => setExplicitSelection([])}
-              onDeleteAllSources={() => handleDeleteSources(allSourceIds, 'Удалить все документы?')}
-              onDeleteUnselectedSources={() =>
-                handleDeleteSources(
-                  allSourceIds.filter((sourceId) => !selectedSourceIds.includes(sourceId)),
-                  'Удалить все невыбранные документы?',
-                )
-              }
+              onDeleteAllSources={() => {
+                if (window.confirm(`Удалить все файлы документов (${sources.data.filter((s) => s.has_docs).length})?`)) {
+                  deleteAllFiles.mutate();
+                }
+              }}
+              onDeleteUnselectedSources={() => {
+                const unselected = sources.data.filter((source) => !selectedSourceIds.includes(source.id) && (source.has_docs ?? false));
+                handleDeleteSources(unselected.map((item) => item.id), `Удалить ${unselected.length} невыбранных файлов?`);
+              }}
               onUpload={(file) => uploadSource.mutate(file)}
+              onDeleteSource={(source) => handleDeleteSources([source.id], `Удалить файл ${source.filename}?`)}
+              onEraseSource={(source) => {
+                if (window.confirm(`Стереть parsing/base данные для ${source.filename}?`)) {
+                  eraseSource.mutate(source.id);
+                }
+              }}
+              onToggleEnabled={(source, enabled) => updateSource.mutate({ sourceId: source.id, payload: { is_enabled: enabled } })}
+              onOpenConfig={(source) =>
+                setSourceConfigModal({
+                  source,
+                  useGlobalChunkSize: source.individual_config?.chunk_size === null || source.individual_config?.chunk_size === undefined,
+                  useGlobalOverlap: source.individual_config?.chunk_overlap === null || source.individual_config?.chunk_overlap === undefined,
+                  useGlobalOcrEnabled: source.individual_config?.ocr_enabled === null || source.individual_config?.ocr_enabled === undefined,
+                  useGlobalOcrLanguage: source.individual_config?.ocr_language === null || source.individual_config?.ocr_language === undefined,
+                  chunkSize: String(source.individual_config?.chunk_size ?? parsingSettings.data.chunk_size),
+                  chunkOverlap: String(source.individual_config?.chunk_overlap ?? parsingSettings.data.chunk_overlap),
+                  ocrEnabled: source.individual_config?.ocr_enabled ?? parsingSettings.data.ocr_enabled,
+                  ocrLanguage: source.individual_config?.ocr_language ?? parsingSettings.data.ocr_language,
+                })
+              }
             />
           ) : null}
         </div>
@@ -313,9 +380,119 @@ export default function NotebookWorkspacePage() {
               {rightCollapsed ? '⟨' : '⟩'}
             </button>
           </div>
-          {!rightCollapsed ? <EvidencePanel citations={citations} notes={notes.data} sources={sources.data} /> : null}
+          {!rightCollapsed ? (
+            <div className="h-full overflow-auto p-3 space-y-3">
+              <div className="rounded border border-slate-200 p-3 space-y-2">
+                <p className="text-sm font-semibold">Глобальные настройки парсинга</p>
+                <label className="text-xs block">
+                  Chunk size
+                  <input
+                    className="mt-1 w-full rounded border p-1"
+                    value={globalSettingsDraft?.chunk_size ?? 512}
+                    onChange={(e) => setGlobalSettingsDraft((prev) => ({ ...(prev ?? parsingSettings.data), chunk_size: Number(e.target.value) }))}
+                    type="number"
+                  />
+                </label>
+                <label className="text-xs block">
+                  Chunk overlap
+                  <input
+                    className="mt-1 w-full rounded border p-1"
+                    value={globalSettingsDraft?.chunk_overlap ?? 64}
+                    onChange={(e) => setGlobalSettingsDraft((prev) => ({ ...(prev ?? parsingSettings.data), chunk_overlap: Number(e.target.value) }))}
+                    type="number"
+                  />
+                </label>
+                <label className="text-xs block">
+                  OCR language
+                  <input
+                    className="mt-1 w-full rounded border p-1"
+                    value={globalSettingsDraft?.ocr_language ?? 'rus+eng'}
+                    onChange={(e) => setGlobalSettingsDraft((prev) => ({ ...(prev ?? parsingSettings.data), ocr_language: e.target.value }))}
+                  />
+                </label>
+                <label className="text-xs inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={globalSettingsDraft?.ocr_enabled ?? true}
+                    onChange={(e) => setGlobalSettingsDraft((prev) => ({ ...(prev ?? parsingSettings.data), ocr_enabled: e.target.checked }))}
+                  />
+                  OCR enabled
+                </label>
+                <button
+                  type="button"
+                  className="rounded border border-slate-300 px-2 py-1 text-xs"
+                  onClick={() => {
+                    if (globalSettingsDraft) {
+                      updateGlobalSettings.mutate(globalSettingsDraft);
+                    }
+                  }}
+                >
+                  Сохранить глобальные
+                </button>
+              </div>
+              <EvidencePanel citations={citations} notes={notes.data} sources={sources.data} />
+            </div>
+          ) : null}
         </div>
       </div>
+
+      {sourceConfigModal ? (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded border p-4 w-[420px] space-y-3">
+            <p className="font-semibold">Настройки парсинга: {sourceConfigModal.source.filename}</p>
+
+            <div className="space-y-1 text-sm">
+              <label className="inline-flex items-center gap-2"><input type="checkbox" checked={sourceConfigModal.useGlobalChunkSize} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalChunkSize: e.target.checked }) : prev)} />Использовать глобальный chunk_size</label>
+              <input type="number" className="w-full rounded border p-1" disabled={sourceConfigModal.useGlobalChunkSize} value={sourceConfigModal.chunkSize} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, chunkSize: e.target.value }) : prev)} />
+            </div>
+
+            <div className="space-y-1 text-sm">
+              <label className="inline-flex items-center gap-2"><input type="checkbox" checked={sourceConfigModal.useGlobalOverlap} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalOverlap: e.target.checked }) : prev)} />Использовать глобальный chunk_overlap</label>
+              <input type="number" className="w-full rounded border p-1" disabled={sourceConfigModal.useGlobalOverlap} value={sourceConfigModal.chunkOverlap} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, chunkOverlap: e.target.value }) : prev)} />
+            </div>
+
+            <div className="space-y-1 text-sm">
+              <label className="inline-flex items-center gap-2"><input type="checkbox" checked={sourceConfigModal.useGlobalOcrEnabled} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalOcrEnabled: e.target.checked }) : prev)} />Использовать глобальный OCR enabled</label>
+              <label className="inline-flex items-center gap-2"><input type="checkbox" disabled={sourceConfigModal.useGlobalOcrEnabled} checked={sourceConfigModal.ocrEnabled} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, ocrEnabled: e.target.checked }) : prev)} />Включить OCR</label>
+            </div>
+
+            <div className="space-y-1 text-sm">
+              <label className="inline-flex items-center gap-2"><input type="checkbox" checked={sourceConfigModal.useGlobalOcrLanguage} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalOcrLanguage: e.target.checked }) : prev)} />Использовать глобальный OCR language</label>
+              <input className="w-full rounded border p-1" disabled={sourceConfigModal.useGlobalOcrLanguage} value={sourceConfigModal.ocrLanguage} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, ocrLanguage: e.target.value }) : prev)} />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button className="rounded border px-2 py-1 text-xs" onClick={() => setSourceConfigModal(null)}>Отмена</button>
+              <button
+                className="rounded border px-2 py-1 text-xs"
+                onClick={() => {
+                  updateSource.mutate(
+                    {
+                      sourceId: sourceConfigModal.source.id,
+                      payload: {
+                        individual_config: {
+                          chunk_size: sourceConfigModal.useGlobalChunkSize ? null : Number(sourceConfigModal.chunkSize),
+                          chunk_overlap: sourceConfigModal.useGlobalOverlap ? null : Number(sourceConfigModal.chunkOverlap),
+                          ocr_enabled: sourceConfigModal.useGlobalOcrEnabled ? null : sourceConfigModal.ocrEnabled,
+                          ocr_language: sourceConfigModal.useGlobalOcrLanguage ? null : sourceConfigModal.ocrLanguage,
+                        },
+                      },
+                    },
+                    {
+                      onSuccess: () => {
+                        reparseSource.mutate(sourceConfigModal.source.id);
+                      },
+                    },
+                  );
+                  setSourceConfigModal(null);
+                }}
+              >
+                Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -11,7 +11,8 @@ PACKAGES_ROOT = ROOT / "packages"
 if str(PACKAGES_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGES_ROOT))
 
-from .parse_service import extract_blocks
+from ..config import BASE_DIR
+from .parse_service import DocumentParser, ParserConfig
 
 try:
     from rag_core.app import engine as core_engine
@@ -37,28 +38,57 @@ def clear_notebook_blocks(notebook_id: str) -> None:
     INDEXED_BLOCKS.pop(notebook_id, None)
 
 
-async def index_source(notebook_id: str, source_id: str, file_path: str) -> list[dict[str, Any]]:
+async def index_source(
+    notebook_id: str,
+    source_id: str,
+    file_path: str,
+    *,
+    parser_config: dict[str, Any] | None = None,
+    source_state: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     """Parse and index one file; optional legacy engine run behind feature flag."""
     path = Path(file_path)
-    blocks = extract_blocks(path)
+    parser = DocumentParser(ParserConfig(**(parser_config or {})))
+    metadata, chunks = parser.parse(
+        str(path),
+        notebook_id,
+        metadata_override={
+            "doc_id": source_id,
+            "individual_config": (source_state or {}).get("individual_config")
+            or {
+                "chunk_size": None,
+                "chunk_overlap": None,
+                "ocr_enabled": None,
+                "ocr_language": None,
+            },
+            "is_enabled": (source_state or {}).get("is_enabled", True),
+        },
+    )
 
     converted = []
-    for block in blocks:
+    for block in chunks:
         converted.append(
             {
                 "source_id": source_id,
-                "source": block.get("source", str(path)),
-                "page": block.get("page", 1),
-                "section_id": block.get("section_id", "p1.s1"),
-                "section_title": block.get("section_title", "__root__"),
-                "text": block.get("text", ""),
-                "type": block.get("type", "text"),
+                "source": str(path),
+                "page": block.page_number or 1,
+                "section_id": f"p{block.page_number or 1}.s{block.chunk_index + 1}",
+                "section_title": block.section_header or "__root__",
+                "text": block.text,
+                "type": block.chunk_type.value,
+                "is_enabled": metadata.is_enabled,
+                "doc_id": metadata.doc_id,
             }
         )
 
     notebook_blocks = INDEXED_BLOCKS.setdefault(notebook_id, [])
     notebook_blocks[:] = [item for item in notebook_blocks if item.get("source_id") != source_id]
     notebook_blocks.extend(converted)
+
+    base_dir = BASE_DIR / notebook_id
+    base_dir.mkdir(parents=True, exist_ok=True)
+    base_marker = base_dir / f"{source_id}.json"
+    base_marker.write_text(str(len(converted)), encoding="utf-8")
 
     if ENABLE_LEGACY_ENGINE and core_engine is not None:
         try:

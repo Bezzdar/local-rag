@@ -25,6 +25,8 @@ def search(notebook_id: str, message: str, selected_source_ids: list[str], top_n
     if selected_source_ids:
         chunks = [chunk for chunk in chunks if chunk.get("source_id") in selected_source_ids]
 
+    chunks = [chunk for chunk in chunks if chunk.get("is_enabled", True)]
+
     if not chunks:
         return []
 
