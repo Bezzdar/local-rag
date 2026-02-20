@@ -97,7 +97,7 @@ export default function NotebooksPage() {
                   className="flex w-full items-center justify-between text-left text-sm font-semibold"
                   onClick={() => setIsRuntimeOpen((current) => !current)}
                 >
-                  Настройки подключения LLM
+                  Провайдер LLM
                   <span>{isRuntimeOpen ? '−' : '+'}</span>
                 </button>
                 {isRuntimeOpen ? <div className="mt-2"><RuntimeSettings /></div> : null}
