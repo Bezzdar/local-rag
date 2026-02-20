@@ -3,11 +3,49 @@ import httpx
 
 router = APIRouter(prefix='/api', tags=['llm'])
 
+CHAT_BLOCKLIST_KEYWORDS = (
+    'embed',
+    'embedding',
+    'rerank',
+    'reranker',
+    'bge-m3',
+    'bge-large',
+    'e5',
+    'gte',
+)
+
+EMBEDDING_HINT_KEYWORDS = (
+    'embed',
+    'embedding',
+    'bge',
+    'e5',
+    'gte',
+    'nomic-embed',
+    'mxbai-embed',
+)
+
+
+def _is_chat_model(model_name: str) -> bool:
+    normalized = model_name.strip().lower()
+    if not normalized:
+        return False
+    return not any(keyword in normalized for keyword in CHAT_BLOCKLIST_KEYWORDS)
+
+
+def _is_embedding_model(model_name: str) -> bool:
+    normalized = model_name.strip().lower()
+    if not normalized:
+        return False
+    if 'rerank' in normalized:
+        return False
+    return any(keyword in normalized for keyword in EMBEDDING_HINT_KEYWORDS)
+
 
 @router.get('/llm/models', response_model=list[str])
 async def list_llm_models(
     provider: str = Query(default='none'),
     base_url: str = Query(default=''),
+    purpose: str = Query(default='all'),
 ) -> list[str]:
     selected_provider = provider.strip().lower()
     endpoint = base_url.strip().rstrip('/')
@@ -27,4 +65,11 @@ async def list_llm_models(
 
     payload = response.json()
     models = payload.get('models', []) if isinstance(payload, dict) else []
-    return [item.get('name', '') for item in models if isinstance(item, dict) and item.get('name')]
+    model_names = [item.get('name', '') for item in models if isinstance(item, dict) and item.get('name')]
+
+    normalized_purpose = purpose.strip().lower()
+    if normalized_purpose == 'chat':
+        return [name for name in model_names if _is_chat_model(name)]
+    if normalized_purpose == 'embedding':
+        return [name for name in model_names if _is_embedding_model(name)]
+    return model_names
