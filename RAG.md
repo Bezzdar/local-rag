@@ -60,6 +60,52 @@
 
 ---
 
-## Дополнение
+## 6) Второй слой: файл → ключевые функции/классы
 
-Если нужно, могу в следующем шаге добавить в этот документ второй слой: **"файл → ключевые функции/классы"** (например, какие конкретно функции отвечают за upload, parsing, chunking, indexing, search и SSE-streaming).
+### Upload и управление источниками
+
+| Файл | Ключевые функции/классы |
+|---|---|
+| `apps/api/routers/sources.py` | `_save_multipart_file_stream` (чтение multipart upload), `_persist_content` (сохранение файла), `upload_source`, `add_path`, `reparse_source`, `delete_source`, `erase_source`, `delete_all_files`. |
+| `apps/api/store.py` | `InMemoryStore` (центральный класс), методы `create_notebook`, `add_source`, `add_source_from_path`, `mark_source_indexing`, `mark_source_indexed`, `mark_source_failed`, `list_sources`, `delete_source`. |
+| `apps/api/routers/notebooks.py` | CRUD-эндпоинты notebook-уровня (`create/list/get/delete`) и связанный lifecycle notebook. |
+
+### Parsing
+
+| Файл | Ключевые функции/классы |
+|---|---|
+| `apps/api/services/parse_service.py` | `DocumentParser` (основной парсер), `ParserConfig`, `ParsedChunk`, `DocumentMetadata`, `extract_blocks` (внешняя точка извлечения блоков), `_token_count`, `_sort_pdf_lines_multicolumn`. |
+| `packages/rag_core/parsers/text_extraction.py` | `extract_blocks` (ядро извлечения), `_extract_pdf_pages`, `_extract_docx`, `_extract_txt`, `_split_sections`, `semantic_chunk`, `TextBlock`. |
+| `packages/rag_core/parsers/preprocessing.py` | Функции очистки/нормализации текста перед chunking и retrieval. |
+| `packages/rag_core/parsers/ner_extraction.py` | Функции извлечения именованных сущностей (NER) для enrichment индекса/контекста. |
+
+### Chunking, embedding, vector DB / indexing
+
+| Файл | Ключевые функции/классы |
+|---|---|
+| `apps/api/services/index_service.py` | `index_source` (основной индексатор source), `get_notebook_blocks`, `remove_source_blocks`, `clear_notebook_blocks`. |
+| `apps/api/services/embedding_service.py` | `EmbeddingEngine` (построение векторных представлений/поиск), `EmbeddingClient`, `EmbeddedChunk`, `IndexMeta`, `SearchResult`, `_normalize`, `_matches_filters`, `_embedded_to_dict`. |
+| `packages/rag_core/app/chunk_manager.py` | `semantic_chunking` (разбиение блоков в чанки), `_split_technical_sections`, `_chunk_text_with_overlap`, `get_chroma_collection`, `ChunkStore`, `save_chunks_for_folder`, `add_chunk_to_folder`, `update_chunk_by_number`, `delete_chunk_by_number`. |
+| `packages/rag_core/app/chunk_editor.py` | Вспомогательные функции редактирования/пересохранения chunk-коллекций и метаданных. |
+| `packages/rag_core/app/engine.py` | `trigger_indexing` (extract→chunk→embed→save), `_get_embed_model`, `check_indexed_files`, `rebuild_index_from_folders`, `delete_index`. |
+
+### Search, answer preparation и SSE streaming
+
+| Файл | Ключевые функции/классы |
+|---|---|
+| `apps/api/services/search_service.py` | `search` (retrieval по notebook-индексу), `_query_to_groups`, `chunk_to_citation_fields`. |
+| `apps/api/routers/chat.py` | `chat` (синхронный ответ), `chat_stream` (SSE-стрим), `to_sse`, `_to_citation`, `list_messages`, `clear_messages`. |
+| `apps/api/services/model_chat.py` | `generate_model_answer`, `stream_model_answer`, `build_chat_history`, `_normalize_provider`. |
+| `apps/api/services/chat_modes.py` | `normalize_chat_mode`, `build_answer`, `ChatModeSpec`. |
+| `packages/rag_core/app/search_engine.py` | `run_fast_search`, `llm_generate_query`, `llm_summarize_chunks`, `_expand_query_groups`, `_group_match`. |
+| `packages/rag_core/app/async_search.py` | `RemoteLibraryAsync`, `aggregated_search` (асинхронная агрегация retrieval-результатов). |
+| `packages/rag_core/app/llm_generic.py` | `ask_llm`, `warmup_model`, `_iter_llama_cpp_stream`, `_iter_ollama_stream`, `_detect_backend`. |
+
+### Поддержка и диагностика
+
+| Файл | Ключевые функции/классы |
+|---|---|
+| `apps/api/main.py` | `on_startup` (инициализация логирования), `http_logging_middleware`, `health`/`root`. |
+| `apps/api/logging_setup.py` | `setup_logging` и функции форматирования/настройки лог-хендлеров backend. |
+| `scripts/verify.sh` | Bash-этапы `compileall`, `pytest`, smoke upload/index/chat c API-проверками. |
+
