@@ -135,7 +135,7 @@ class EmbeddingClient:
         self._client = httpx.Client(timeout=provider.api_timeout)
         self._base_url = provider.base_url.rstrip("/")
         self._embedding_dim = max(1, int(provider.fallback_dim or 384))
-        self._active_embed_path = self._embedding_paths()[0]
+        self._active_embed_target = self._embedding_targets()[0]
         self._available = False
         if not provider.enabled:
             return
@@ -163,37 +163,73 @@ class EmbeddingClient:
     def _zero(self) -> list[float]:
         return [0.0 for _ in range(self._embedding_dim)]
 
-    def _embedding_paths(self) -> list[str]:
+    def _embedding_targets(self) -> list[tuple[str, Literal["native", "openai", "legacy"]]]:
         if self._provider.endpoint:
             custom = self._provider.endpoint if self._provider.endpoint.startswith("/") else f"/{self._provider.endpoint}"
-            return [custom]
-        if self._base_url.endswith("/api"):
-            primary, fallback = "/embed", "/embeddings"
-        else:
-            primary, fallback = "/api/embed", "/api/embeddings"
+            return [(custom, "native")]
         if (self._provider.provider or "ollama").lower() == "openai":
-            return ["/v1/embeddings"]
-        return [primary, fallback]
+            return [("/v1/embeddings", "openai")]
+        if self._base_url.endswith("/api"):
+            return [("/embed", "native"), ("/embeddings", "legacy"), ("/v1/embeddings", "openai")]
+        else:
+            return [('/api/embed', 'native'), ('/api/embeddings', 'legacy'), ('/v1/embeddings', 'openai')]
+
+    def _parse_embeddings_response(self, response: httpx.Response, expected_size: int) -> list[list[float]]:
+        data = response.json()
+        if isinstance(data, dict):
+            embeddings = data.get("embeddings")
+            if isinstance(embeddings, list):
+                result = [item if isinstance(item, list) else self._zero() for item in embeddings]
+                return (result + [self._zero()] * expected_size)[:expected_size]
+            openai_items = data.get("data")
+            if isinstance(openai_items, list):
+                result = []
+                for item in openai_items:
+                    if isinstance(item, dict) and isinstance(item.get("embedding"), list):
+                        result.append(item["embedding"])
+                    else:
+                        result.append(self._zero())
+                return (result + [self._zero()] * expected_size)[:expected_size]
+            single = data.get("embedding")
+            if isinstance(single, list):
+                return [single]
+        return [self._zero() for _ in range(expected_size)]
+
+    def _request_embeddings(self, path: str, mode: Literal["native", "openai", "legacy"], texts: list[str]) -> list[list[float]]:
+        url = f"{self._base_url}{path}"
+        if mode == "legacy":
+            vectors: list[list[float]] = []
+            for text in texts:
+                response = self._client.post(url, json={"model": self._provider.model_name, "prompt": text})
+                response.raise_for_status()
+                vectors.extend(self._parse_embeddings_response(response, 1))
+            return vectors
+        payload = {"model": self._provider.model_name, "input": texts}
+        response = self._client.post(url, json=payload)
+        response.raise_for_status()
+        return self._parse_embeddings_response(response, len(texts))
 
     def get_embeddings(self, texts: list[str], use_retry: bool = True) -> list[list[float]]:
         if not self._provider.enabled:
             return [self._zero() for _ in texts]
-        payload = {"model": self._provider.model_name, "input": texts}
         for attempt in range(3):
             try:
-                url = f"{self._base_url}{self._active_embed_path}"
-                response = self._client.post(url, json=payload)
-                if response.status_code == 404 and use_retry:
-                    paths = self._embedding_paths()
-                    if len(paths) > 1 and self._active_embed_path == paths[0]:
-                        self._active_embed_path = paths[1]
-                        response = self._client.post(f"{self._base_url}{self._active_embed_path}", json=payload)
-                response.raise_for_status()
-                embeddings = response.json().get("embeddings") or []
-                embeddings = (embeddings + [self._zero()] * len(texts))[: len(texts)]
+                path, mode = self._active_embed_target
+                embeddings = self._request_embeddings(path, mode, texts)
                 self._available = True
                 return [[float(x) for x in item] if isinstance(item, list) and item else self._zero() for item in embeddings]
             except Exception:
+                if use_retry:
+                    for candidate in self._embedding_targets():
+                        if candidate == self._active_embed_target:
+                            continue
+                        try:
+                            embeddings = self._request_embeddings(candidate[0], candidate[1], texts)
+                            self._active_embed_target = candidate
+                            self._available = True
+                            return [[float(x) for x in item] if isinstance(item, list) and item else self._zero() for item in embeddings]
+                        except Exception:
+                            continue
                 if attempt == 2 or not use_retry:
                     self._available = False
                     return [self._zero() for _ in texts]
