@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .embedding_service import EmbeddingConfig, EmbeddingEngine, EmbeddingProviderConfig
+from ..config import EMBEDDING_BASE_URL, EMBEDDING_DIM, EMBEDDING_ENABLED, EMBEDDING_ENDPOINT, EMBEDDING_PROVIDER
 from .notebook_db import db_for_notebook
 
 _ENGINE: EmbeddingEngine | None = None
@@ -17,18 +18,17 @@ _ENGINE: EmbeddingEngine | None = None
 def _engine() -> EmbeddingEngine | None:
     global _ENGINE
     if _ENGINE is None:
-        enabled = os.getenv("EMBEDDING_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
         try:
             _ENGINE = EmbeddingEngine(
                 EmbeddingConfig(
-                    embedding_dim=int(os.getenv("EMBEDDING_DIM", "384")),
+                    embedding_dim=EMBEDDING_DIM,
                     provider=EmbeddingProviderConfig(
-                        base_url=os.getenv("EMBEDDING_BASE_URL", "http://localhost:11434"),
+                        base_url=EMBEDDING_BASE_URL,
                         model_name=os.getenv("EMBEDDING_MODEL", "nomic-embed-text"),
-                        provider=os.getenv("EMBEDDING_PROVIDER", "ollama"),
-                        endpoint=os.getenv("EMBEDDING_ENDPOINT") or None,
-                        enabled=enabled,
-                        fallback_dim=int(os.getenv("EMBEDDING_DIM", "384")),
+                        provider=EMBEDDING_PROVIDER,
+                        endpoint=EMBEDDING_ENDPOINT,
+                        enabled=EMBEDDING_ENABLED,
+                        fallback_dim=EMBEDDING_DIM,
                     )
                 )
             )
