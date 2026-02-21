@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import os
 import threading
 from pathlib import Path
@@ -22,6 +24,8 @@ NOTEBOOKS_DB_DIR.mkdir(parents=True, exist_ok=True)
 
 DEMO_NOTEBOOK_ID = "00000000-0000-0000-0000-000000000001"
 
+logger = logging.getLogger(__name__)
+
 
 # --- Основные блоки ---
 class InMemoryStore:
@@ -37,11 +41,17 @@ class InMemoryStore:
 
     def _get_embedding_engine(self) -> EmbeddingEngine:
         if self._embedding_engine is None:
+            enabled = os.getenv("EMBEDDING_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
             self._embedding_engine = EmbeddingEngine(
                 EmbeddingConfig(
+                    embedding_dim=int(os.getenv("EMBEDDING_DIM", "384")),
                     provider=EmbeddingProviderConfig(
                         base_url=os.getenv("EMBEDDING_BASE_URL", "http://localhost:11434"),
                         model_name=os.getenv("EMBEDDING_MODEL", "nomic-embed-text"),
+                        provider=os.getenv("EMBEDDING_PROVIDER", "ollama"),
+                        endpoint=os.getenv("EMBEDDING_ENDPOINT") or None,
+                        enabled=enabled,
+                        fallback_dim=int(os.getenv("EMBEDDING_DIM", "384")),
                     )
                 )
             )
@@ -186,7 +196,9 @@ class InMemoryStore:
                     source_state=source.model_dump(),
                 )
             )
-            embedded_chunks = self._get_embedding_engine().embed_document_from_parsing(source.notebook_id, source.id)
+            engine = self._get_embedding_engine()
+            embedded_chunks = engine.embed_document_from_parsing(source.notebook_id, source.id)
+            vector_ready = any(not item.embedding_failed for item in embedded_chunks)
             notebook_db = db_for_notebook(source.notebook_id)
             notebook_db.upsert_document(
                 metadata=metadata,
@@ -195,10 +207,26 @@ class InMemoryStore:
                 is_enabled=source.is_enabled,
             )
             notebook_db.close()
+            base_dir = BASE_DIR / source.notebook_id
+            base_dir.mkdir(parents=True, exist_ok=True)
+            base_file = base_dir / f"{source.id}.json"
+            base_file.write_text(
+                json.dumps([item.parsed_chunk for item in embedded_chunks], ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
             source.status = "indexed"
             source.has_parsing = True
             source.has_base = True
+            if vector_ready:
+                source.embeddings_status = "available"
+                source.index_warning = None
+                logger.info("[index] %s indexed (vector+fts)", source.id)
+            else:
+                source.embeddings_status = "unavailable"
+                source.index_warning = "indexed (text-only)"
+                logger.warning("[index] %s indexed (text-only): embeddings unavailable", source.id)
         except Exception:
+            logger.exception("[index] failed for source %s", source_id)
             source.status = "failed"
 
 

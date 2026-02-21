@@ -187,7 +187,7 @@ class NotebookDB:
             rowid = int(cursor.lastrowid)
             self.conn.execute("INSERT INTO chunks_fts(rowid, chunk_text) VALUES (?, ?)", (rowid, chunk.get("text", "")))
             self.conn.execute(
-                "INSERT INTO chunk_embeddings(chunk_rowid, embedding) VALUES (?, ?)",
+                "INSERT OR REPLACE INTO chunk_embeddings(chunk_rowid, embedding) VALUES (?, ?)",
                 (rowid, json.dumps(item.embedding, ensure_ascii=False)),
             )
 
@@ -248,7 +248,41 @@ class NotebookDB:
             """,
             [query, *params, top_k],
         ).fetchall()
-        return [dict(row) for row in rows]
+        if rows:
+            return [dict(row) for row in rows]
+
+        terms = [term for term in query.strip().split() if term]
+        if not terms:
+            return []
+        like_clauses = " OR ".join(["c.chunk_text LIKE ?" for _ in terms])
+        like_values = [f"%{term}%" for term in terms]
+        fallback_rows = self.conn.execute(
+            f"""
+            SELECT c.rowid, c.chunk_id, c.doc_id, c.chunk_text, c.page_number, c.section_header,
+                   d.filepath, d.filename, 0.0 AS score
+            FROM chunks c
+            JOIN documents d ON d.doc_id=c.doc_id
+            WHERE ({like_clauses}) AND {where_clause}
+            LIMIT ?
+            """,
+            [*like_values, *params, top_k],
+        ).fetchall()
+        if fallback_rows:
+            return [dict(row) for row in fallback_rows]
+
+        generic_rows = self.conn.execute(
+            f"""
+            SELECT c.rowid, c.chunk_id, c.doc_id, c.chunk_text, c.page_number, c.section_header,
+                   d.filepath, d.filename, 0.0 AS score
+            FROM chunks c
+            JOIN documents d ON d.doc_id=c.doc_id
+            WHERE {where_clause}
+            ORDER BY c.rowid DESC
+            LIMIT ?
+            """,
+            [*params, top_k],
+        ).fetchall()
+        return [dict(row) for row in generic_rows]
 
     def search_vector(self, query_vector: list[float], top_k: int, selected_source_ids: list[str] | None = None, only_enabled_tags: bool = True) -> list[dict[str, Any]]:
         where_clause, params = self._enabled_filter_clause(selected_source_ids, only_enabled_tags)

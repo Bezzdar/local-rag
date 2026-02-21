@@ -105,3 +105,64 @@ def test_embed_document_from_parsing_returns_embedded_chunks(tmp_path, monkeypat
     embedded = engine.embed_document_from_parsing(notebook_id, doc_id)
     assert len(embedded) == 1
     assert source.exists() is True
+
+
+class FakeResponse:
+    def __init__(self, status_code: int, payload: dict | None = None):
+        self.status_code = status_code
+        self._payload = payload or {}
+
+    @property
+    def is_success(self) -> bool:
+        return 200 <= self.status_code < 300
+
+    def raise_for_status(self) -> None:
+        if not self.is_success:
+            raise RuntimeError(f"status={self.status_code}")
+
+    def json(self) -> dict:
+        return self._payload
+
+
+class FakeHTTPClient:
+    def __init__(self, *_args, **_kwargs):
+        self.posts: list[str] = []
+
+    def get(self, url: str) -> FakeResponse:
+        if url.endswith('/api/tags'):
+            return FakeResponse(200, {'models': []})
+        return FakeResponse(404)
+
+    def post(self, url: str, json: dict) -> FakeResponse:
+        self.posts.append(url)
+        if url.endswith('/api/embed'):
+            return FakeResponse(404)
+        if url.endswith('/api/embeddings') or url.endswith('/embed'):
+            return FakeResponse(200, {'embeddings': [[1.0, 2.0, 3.0, 4.0] for _ in json['input']]})
+        return FakeResponse(404)
+
+
+def test_ollama_fallback_endpoint_on_404(monkeypatch):
+    from apps.api.services import embedding_service
+
+    monkeypatch.setattr(embedding_service.httpx, 'Client', FakeHTTPClient)
+    client = embedding_service.EmbeddingClient(
+        EmbeddingProviderConfig(base_url='http://localhost:11434', model_name='dummy', provider='ollama')
+    )
+
+    vectors = client.get_embeddings(['hello'])
+    assert vectors[0] == [1.0, 2.0, 3.0, 4.0]
+    assert any(url.endswith('/api/embed') for url in client._client.posts)
+    assert any(url.endswith('/api/embeddings') for url in client._client.posts)
+
+
+def test_base_url_api_suffix_is_not_duplicated(monkeypatch):
+    from apps.api.services import embedding_service
+
+    monkeypatch.setattr(embedding_service.httpx, 'Client', FakeHTTPClient)
+    client = embedding_service.EmbeddingClient(
+        EmbeddingProviderConfig(base_url='http://localhost:11434/api', model_name='dummy', provider='ollama')
+    )
+
+    client.get_embeddings(['hello'])
+    assert all('/api/api/' not in url for url in client._client.posts)

@@ -42,6 +42,10 @@ class IndexCompatibilityError(RuntimeError):
 class EmbeddingProviderConfig:
     base_url: str
     model_name: str
+    provider: str = "ollama"
+    endpoint: str | None = None
+    enabled: bool = True
+    fallback_dim: int = 384
     api_timeout: int = 120
 
 
@@ -148,12 +152,22 @@ class EmbeddingClient:
     def __init__(self, provider: EmbeddingProviderConfig):
         self._provider = provider
         self._client = httpx.Client(timeout=provider.api_timeout)
+        self._base_url = provider.base_url.rstrip("/")
+        self._embedding_dim = max(1, int(provider.fallback_dim or 384))
+        self._active_embed_path = self._embedding_paths()[0]
+        self._available = False
+        if not provider.enabled:
+            logger.info("[embedding] Disabled by config. Using zero vectors with dim=%s", self._embedding_dim)
+            return
         if not self.health_check():
             logger.warning("[embedding] Server unavailable: %s. Fallback to zero vectors.", provider.base_url)
-            self._embedding_dim = 384
             return
-        probe = self.get_embeddings(["dimension probe"])
-        self._embedding_dim = len(probe[0]) if probe and probe[0] else 384
+        probe = self.get_embeddings(["dimension probe"], use_retry=False)
+        if probe and probe[0]:
+            self._embedding_dim = len(probe[0])
+            self._available = True
+        else:
+            logger.warning("[embedding] Probe failed, fallback to zero vectors with dim=%s", self._embedding_dim)
         logger.info(
             "[embedding] Server: %s, model: %s, dim: %s",
             provider.base_url,
@@ -163,10 +177,14 @@ class EmbeddingClient:
 
     def health_check(self) -> bool:
         try:
-            response = self._client.get(f"{self._provider.base_url}/api/tags")
+            response = self._client.get(f"{self._base_url}/api/tags")
             return response.status_code < 500
         except Exception:
             return False
+
+    @property
+    def is_available(self) -> bool:
+        return self._available
 
     @property
     def embedding_dim(self) -> int:
@@ -175,11 +193,44 @@ class EmbeddingClient:
     def _zero(self) -> list[float]:
         return [0.0 for _ in range(self._embedding_dim)]
 
-    def get_embeddings(self, texts: list[str]) -> list[list[float]]:
+    def _embedding_paths(self) -> list[str]:
+        if self._provider.endpoint:
+            custom = self._provider.endpoint if self._provider.endpoint.startswith("/") else f"/{self._provider.endpoint}"
+            return [custom]
+
+        normalized = self._base_url
+        if normalized.endswith("/api"):
+            primary = "/embed"
+            fallback = "/embeddings"
+        else:
+            primary = "/api/embed"
+            fallback = "/api/embeddings"
+
+        provider = (self._provider.provider or "ollama").lower()
+        if provider == "ollama":
+            return [primary, fallback]
+        if provider == "openai":
+            return ["/v1/embeddings"]
+        return [primary]
+
+    def get_embeddings(self, texts: list[str], use_retry: bool = True) -> list[list[float]]:
+        if not self._provider.enabled:
+            return [self._zero() for _ in texts]
         payload = {"model": self._provider.model_name, "input": texts}
         for attempt in range(3):
             try:
-                response = self._client.post(f"{self._provider.base_url}/api/embed", json=payload)
+                full_url = f"{self._base_url}{self._active_embed_path}"
+                logger.info("[embedding] POST %s", full_url)
+                response = self._client.post(full_url, json=payload)
+                if response.status_code == 404 and use_retry:
+                    paths = self._embedding_paths()
+                    if len(paths) > 1 and self._active_embed_path == paths[0]:
+                        logger.warning("[embedding] Endpoint %s returned 404, trying fallback", full_url)
+                        self._active_embed_path = paths[1]
+                        fallback_url = f"{self._base_url}{self._active_embed_path}"
+                        response = self._client.post(fallback_url, json=payload)
+                        if response.is_success:
+                            logger.info("[embedding] Fallback endpoint succeeded: %s", fallback_url)
                 response.raise_for_status()
                 data = response.json()
                 embeddings = data.get("embeddings") or []
@@ -192,12 +243,17 @@ class EmbeddingClient:
                         result.append(self._zero())
                         continue
                     result.append([float(x) for x in item])
+                self._available = True
                 return result
             except Exception as exc:
                 if attempt == 2:
                     logger.warning("[embedding] Batch failed after retries: %s", exc)
+                    self._available = False
                     return [self._zero() for _ in texts]
+                if not use_retry:
+                    break
                 time.sleep(2**attempt)
+        self._available = False
         return [self._zero() for _ in texts]
 
 
@@ -205,9 +261,13 @@ class EmbeddingEngine:
     def __init__(self, config: EmbeddingConfig):
         self.config = config
         self.client = EmbeddingClient(config.provider)
-        self.config.embedding_dim = self.client.embedding_dim
+        self.config.embedding_dim = self.client.embedding_dim or self.config.embedding_dim
         self._indices: dict[str, object] = {}
         self._chunk_lookup: dict[str, dict[str, EmbeddedChunk]] = {}
+
+    @property
+    def is_embedding_available(self) -> bool:
+        return self.client.is_available
 
     def process_notebook(
         self,
