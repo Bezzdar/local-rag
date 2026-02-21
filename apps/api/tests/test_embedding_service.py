@@ -191,3 +191,67 @@ def test_ollama_fallback_to_v1_embeddings(monkeypatch):
     vectors = client.get_embeddings(['hello'])
     assert vectors[0] == [1.0, 2.0, 3.0, 4.0]
     assert any(url.endswith('/v1/embeddings') for url in client._client.posts)
+
+
+class FakeHTTPClientModelAlias(FakeHTTPClient):
+    def __init__(self, *_args, **_kwargs):
+        super().__init__()
+        self.models = ['qwen3-embedding']
+
+    def get(self, url: str) -> FakeResponse:
+        if url.endswith('/api/tags'):
+            return FakeResponse(200, {'models': [{'name': name} for name in self.models]})
+        return FakeResponse(404)
+
+    def post(self, url: str, json: dict) -> FakeResponse:
+        self.posts.append(url)
+        if json.get('model') != 'qwen3-embedding':
+            return FakeResponse(404)
+        if url.endswith('/api/embed'):
+            inputs = json.get('input', [])
+            return FakeResponse(200, {'embeddings': [[1.0, 2.0, 3.0, 4.0] for _ in inputs]})
+        return FakeResponse(404)
+
+
+class FakeHTTPClientMissingModel(FakeHTTPClient):
+    def __init__(self, *_args, **_kwargs):
+        super().__init__()
+        self.models = ['another-model']
+
+    def get(self, url: str) -> FakeResponse:
+        if url.endswith('/api/tags'):
+            return FakeResponse(200, {'models': [{'name': name} for name in self.models]})
+        return FakeResponse(404)
+
+    def post(self, url: str, json: dict) -> FakeResponse:
+        self.posts.append(url)
+        return FakeResponse(404)
+
+
+def test_embedding_model_alias_fallback_from_tagged_name(monkeypatch):
+    from apps.api.services import embedding_service
+
+    monkeypatch.setattr(embedding_service.httpx, 'Client', FakeHTTPClientModelAlias)
+    client = embedding_service.EmbeddingClient(
+        EmbeddingProviderConfig(base_url='http://localhost:11434', model_name='qwen3-embedding:0.6b', provider='ollama')
+    )
+
+    vectors = client.get_embeddings(['hello'])
+    assert vectors[0] == [1.0, 2.0, 3.0, 4.0]
+
+
+def test_disable_retries_when_model_absent(monkeypatch):
+    from apps.api.services import embedding_service
+
+    monkeypatch.setattr(embedding_service.httpx, 'Client', FakeHTTPClientMissingModel)
+    client = embedding_service.EmbeddingClient(
+        EmbeddingProviderConfig(base_url='http://localhost:11434', model_name='qwen3-embedding:0.6b', provider='ollama')
+    )
+
+    first = client.get_embeddings(['hello'])
+    posts_after_first = len(client._client.posts)
+    second = client.get_embeddings(['hello'])
+
+    assert all(value == 0.0 for value in first[0])
+    assert all(value == 0.0 for value in second[0])
+    assert len(client._client.posts) == posts_after_first
