@@ -67,6 +67,16 @@ export type Citation = z.infer<typeof CitationSchema>;
 export type Note = z.infer<typeof NoteSchema>;
 
 
+export const AgentManifestSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  version: z.string(),
+  requires: z.array(z.string()).optional(),
+});
+
+export type AgentManifest = z.infer<typeof AgentManifestSchema>;
+
 export const ParsingSettingsSchema = z.object({
   chunk_size: z.number(),
   chunk_overlap: z.number(),

@@ -83,6 +83,7 @@ async def chat_stream(
     notebook_id: str,
     message: str,
     mode: str = "rag",
+    agent_id: str = Query(default=""),
     selected_source_ids: str = Query(default=""),
     provider: str = Query(default="none"),
     model: str = Query(default=""),
@@ -92,14 +93,15 @@ async def chat_stream(
     normalized_mode = normalize_chat_mode(mode)
     selected_ids = [chunk for chunk in selected_source_ids.split(",") if chunk]
     logger.info(
-        "CHAT STREAM opened mode=%s normalized_mode=%s provider=%s model=%s notebook_id=%s max_history=%s",
+        "CHAT STREAM opened mode=%s normalized_mode=%s agent_id=%s provider=%s model=%s notebook_id=%s max_history=%s",
         mode,
         normalized_mode,
+        agent_id or "none",
         provider,
         model,
         notebook_id,
         max_history,
-        extra={"event": "chat.stream.open", "details": f"selected_source_ids={selected_ids}; message_len={len(message)}"},
+        extra={"event": "chat.stream.open", "details": f"agent_id={agent_id}; selected_source_ids={selected_ids}; message_len={len(message)}"},
     )
 
     async def stream():
@@ -158,7 +160,7 @@ async def chat_stream(
             yield to_sse("done", {"message_id": assistant.id})
             return
         else:
-            answer = build_answer(normalized_mode, message, citations)
+            answer = build_answer(normalized_mode, message, citations, agent_id=agent_id)
 
         assembled = []
         for word in answer.split(" "):

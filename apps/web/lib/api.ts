@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ChatMessageSchema, CitationSchema, NoteSchema, NotebookSchema, ParsingSettingsSchema, SourceSchema } from '@/types/dto';
+import { AgentManifestSchema, ChatMessageSchema, CitationSchema, NoteSchema, NotebookSchema, ParsingSettingsSchema, SourceSchema } from '@/types/dto';
 
 const apiBase = (process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000').replace(/\/+$/, '');
 
@@ -109,6 +109,7 @@ export const api = {
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, content }) },
       NoteSchema,
     ),
+  listAgents: () => request('/api/agents', { method: 'GET' }, z.array(AgentManifestSchema)),
   fileUrl: (path: string) => `${apiBase}/api/files?path=${encodeURIComponent(path)}`,
 };
 
