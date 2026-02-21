@@ -14,17 +14,26 @@ _ENGINE: EmbeddingEngine | None = None
 
 
 # --- Основные блоки ---
-def _engine() -> EmbeddingEngine:
+def _engine() -> EmbeddingEngine | None:
     global _ENGINE
     if _ENGINE is None:
-        _ENGINE = EmbeddingEngine(
-            EmbeddingConfig(
-                provider=EmbeddingProviderConfig(
-                    base_url=os.getenv("EMBEDDING_BASE_URL", "http://localhost:11434"),
-                    model_name=os.getenv("EMBEDDING_MODEL", "nomic-embed-text"),
+        enabled = os.getenv("EMBEDDING_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
+        try:
+            _ENGINE = EmbeddingEngine(
+                EmbeddingConfig(
+                    embedding_dim=int(os.getenv("EMBEDDING_DIM", "384")),
+                    provider=EmbeddingProviderConfig(
+                        base_url=os.getenv("EMBEDDING_BASE_URL", "http://localhost:11434"),
+                        model_name=os.getenv("EMBEDDING_MODEL", "nomic-embed-text"),
+                        provider=os.getenv("EMBEDDING_PROVIDER", "ollama"),
+                        endpoint=os.getenv("EMBEDDING_ENDPOINT") or None,
+                        enabled=enabled,
+                        fallback_dim=int(os.getenv("EMBEDDING_DIM", "384")),
+                    )
                 )
             )
-        )
+        except Exception:
+            _ENGINE = None
     return _ENGINE
 
 
@@ -47,13 +56,17 @@ def _rrf_merge(vector_rows: list[dict[str, Any]], fts_rows: list[dict[str, Any]]
 def search(notebook_id: str, message: str, selected_source_ids: list[str], top_n: int = 5) -> list[dict[str, Any]]:
     notebook_db = db_for_notebook(notebook_id)
     try:
-        query_vector = _engine().embed_query(message)
-        vector_rows = notebook_db.search_vector(
-            query_vector=query_vector,
-            top_k=max(top_n * 3, 10),
-            selected_source_ids=selected_source_ids or None,
-            only_enabled_tags=True,
-        )
+        engine = _engine()
+        if engine is not None and engine.is_embedding_available:
+            query_vector = engine.embed_query(message)
+            vector_rows = notebook_db.search_vector(
+                query_vector=query_vector,
+                top_k=max(top_n * 3, 10),
+                selected_source_ids=selected_source_ids or None,
+                only_enabled_tags=True,
+            )
+        else:
+            vector_rows = []
         try:
             fts_rows = notebook_db.search_fts(
                 query=message,
@@ -66,7 +79,7 @@ def search(notebook_id: str, message: str, selected_source_ids: list[str], top_n
     finally:
         notebook_db.close()
 
-    merged = _rrf_merge(vector_rows, fts_rows, top_n)
+    merged = fts_rows[:top_n] if not vector_rows else _rrf_merge(vector_rows, fts_rows, top_n)
     result: list[dict[str, Any]] = []
     for row in merged:
         result.append(
