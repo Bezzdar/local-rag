@@ -324,8 +324,8 @@ export default function NotebookWorkspacePage() {
               selectedSourceIds={selectedSourceIds}
               onNotebookChange={(id) => router.push(`/notebooks/${id}`)}
               onToggleSource={handleToggleSource}
-              onSelectAllSources={() => setExplicitSelection(allSourceIds)}
-              onClearSourceSelection={() => setExplicitSelection([])}
+              onSelectAllSources={() => { logClientEvent({ event: 'ui.sources.select_all', notebookId }); setExplicitSelection(allSourceIds); }}
+              onClearSourceSelection={() => { logClientEvent({ event: 'ui.sources.deselect_all', notebookId }); setExplicitSelection([]); }}
               onDeleteSelectedSources={() => {
                 handleDeleteSources(selectedSourceIds, `Удалить ${selectedSourceIds.length} выбранных документов?`);
               }}
@@ -338,21 +338,25 @@ export default function NotebookWorkspacePage() {
               onParseAllSources={() => {
                 const ids = sources.data.map((s) => s.id);
                 if (ids.length === 0) return;
+                logClientEvent({ event: 'ui.sources.reparse_all', notebookId, metadata: { count: ids.length } });
                 ids.forEach((id) => reparseSource.mutate(id));
               }}
               onParseSelectedSources={() => {
                 if (selectedSourceIds.length === 0) return;
+                logClientEvent({ event: 'ui.sources.reparse_selected', notebookId, metadata: { count: selectedSourceIds.length } });
                 selectedSourceIds.forEach((id) => reparseSource.mutate(id));
               }}
-              onUpload={(file) => uploadSource.mutate(file)}
+              onUpload={(file) => { logClientEvent({ event: 'ui.source.upload', notebookId, metadata: { filename: file.name, size: file.size } }); uploadSource.mutate(file); }}
               onDeleteSource={(source) => handleDeleteSources([source.id], `Удалить документ ${source.filename} и все связанные данные?`)}
               onEraseSource={(source) => {
                 if (window.confirm(`Стереть parsing/base данные для ${source.filename}?`)) {
+                  logClientEvent({ event: 'ui.source.erase', notebookId, metadata: { sourceId: source.id, filename: source.filename } });
                   eraseSource.mutate(source.id);
                 }
               }}
-              onParseSource={(source) => reparseSource.mutate(source.id)}
-              onOpenConfig={(source) =>
+              onParseSource={(source) => { logClientEvent({ event: 'ui.source.reparse', notebookId, metadata: { sourceId: source.id, filename: source.filename } }); reparseSource.mutate(source.id); }}
+              onOpenConfig={(source) => {
+                logClientEvent({ event: 'ui.source.config_open', notebookId, metadata: { sourceId: source.id, filename: source.filename } });
                 setSourceConfigModal({
                   source,
                   useGlobalChunkSize: source.individual_config?.chunk_size === null || source.individual_config?.chunk_size === undefined,
@@ -363,8 +367,8 @@ export default function NotebookWorkspacePage() {
                   chunkOverlap: String(source.individual_config?.chunk_overlap ?? parsingSettings.data.chunk_overlap),
                   ocrEnabled: source.individual_config?.ocr_enabled ?? parsingSettings.data.ocr_enabled,
                   ocrLanguage: source.individual_config?.ocr_language ?? parsingSettings.data.ocr_language,
-                })
-              }
+                });
+              }}
             />
           ) : null}
         </div>
@@ -383,8 +387,8 @@ export default function NotebookWorkspacePage() {
           messages={messages.data}
           streaming={streaming}
           citations={citations}
-          onModeChange={(nextMode) => setCurrentMode(nextMode as ChatMode)}
-          onAgentChange={(agentId) => setSelectedAgent(agentId)}
+          onModeChange={(nextMode) => { logClientEvent({ event: 'ui.chat.mode_change', notebookId, metadata: { from: currentMode, to: nextMode } }); setCurrentMode(nextMode as ChatMode); }}
+          onAgentChange={(agentId) => { logClientEvent({ event: 'ui.chat.agent_change', notebookId, metadata: { agentId } }); setSelectedAgent(agentId); }}
           onSend={sendMessage}
           disableSend={isClearing || clearChat.isPending}
           sendDisabledReason={isClearing || clearChat.isPending ? 'Очистка в процессе…' : undefined}
@@ -396,7 +400,7 @@ export default function NotebookWorkspacePage() {
             logClientEvent({ event: 'ui.clear_chat.confirmed', notebookId });
             clearChat.mutate();
           }}
-          onSaveToNotes={(content) => createNote.mutate({ title: 'Из чата', content })}
+          onSaveToNotes={(content) => { logClientEvent({ event: 'ui.note.save_from_chat', notebookId }); createNote.mutate({ title: 'Из чата', content }); }}
         />
 
         <div

@@ -33,8 +33,11 @@ app.include_router(agents.router)
 # --- Основные блоки ---
 @app.on_event("startup")
 def on_startup() -> None:
-    log_file = setup_logging()
-    logger.info("Application startup completed", extra={"event": "app.ready", "details": f"log_file={log_file}"})
+    app_log, ui_log = setup_logging()
+    logger.info(
+        "Application startup completed",
+        extra={"event": "app.ready", "details": f"app_log={app_log} | ui_log={ui_log}"},
+    )
 
 
 @app.middleware("http")
