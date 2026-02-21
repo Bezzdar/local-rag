@@ -6,8 +6,7 @@ import os
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT_DIR / "data"
 DOCS_DIR = DATA_DIR / "docs"
-PARSING_DIR = DATA_DIR / "parsing"
-CHUNKS_DIR = PARSING_DIR  # backward-compatible alias
+CHUNKS_DIR = DATA_DIR / "parsing"
 NOTEBOOKS_DB_DIR = DATA_DIR / "notebooks"
 LOGS_DIR = DATA_DIR / "logs"
 

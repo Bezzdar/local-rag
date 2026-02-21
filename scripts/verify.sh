@@ -63,7 +63,7 @@ trap cleanup EXIT
 
 # --- Этапы верификации ---
 log "1) compileall"
-python -m compileall apps/api packages/rag_core
+python -m compileall apps/api
 
 log "2) pytest"
 pytest -q apps/api/tests

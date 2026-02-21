@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Iterable
 
 import httpx
@@ -35,7 +36,6 @@ def build_rag_context(chunks: list[dict]) -> str:
         return ""
     parts: list[str] = []
     for i, chunk in enumerate(chunks, start=1):
-        from pathlib import Path
         src = Path(chunk.get("source", "")).name or "unknown"
         page = chunk.get("page")
         page_str = f" (стр. {page})" if isinstance(page, int) else ""

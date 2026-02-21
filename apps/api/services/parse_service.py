@@ -608,21 +608,3 @@ class DocumentParser:
         metadata = DocumentMetadata(**payload["metadata"])
         chunks = [ParsedChunk(**{**item, "chunk_type": ChunkType(item["chunk_type"])}) for item in payload["chunks"]]
         return metadata, chunks
-
-
-def extract_blocks(file_path: str | Path) -> list[dict]:
-    """Deprecated helper for ad-hoc extraction; not used in production indexing pipeline."""
-    parser = DocumentParser(ParserConfig())
-    metadata, chunks = parser.parse(str(file_path), "adhoc")
-    return [
-        {
-            "text": chunk.text,
-            "type": chunk.chunk_type.value,
-            "page": chunk.page_number or 1,
-            "source": str(file_path),
-            "section_id": f"p{chunk.page_number or 1}.s{chunk.chunk_index + 1}",
-            "section_title": chunk.section_header or "__root__",
-            "doc_id": metadata.doc_id,
-        }
-        for chunk in chunks
-    ]

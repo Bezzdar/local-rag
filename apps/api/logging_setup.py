@@ -9,8 +9,7 @@ from pathlib import Path
 
 from .config import LOGS_DIR
 
-LOG_DIR = LOGS_DIR
-LOG_FILE = LOG_DIR / "app.log"
+LOG_FILE = LOGS_DIR / "app.log"
 
 
 # --- Основные блоки ---
@@ -36,7 +35,7 @@ def setup_logging() -> Path:
     if _CONFIGURED:
         return LOG_FILE
 
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)

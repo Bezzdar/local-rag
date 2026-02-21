@@ -45,8 +45,6 @@ class Source(BaseModel):
     )
 
 
-
-
 class ParsingSettings(BaseModel):
     chunk_size: int = 512
     chunk_overlap: int = 64

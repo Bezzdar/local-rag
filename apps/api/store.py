@@ -13,7 +13,7 @@ from uuid import uuid4
 from .config import CHUNKS_DIR, DOCS_DIR, NOTEBOOKS_DB_DIR, EMBEDDING_BASE_URL, EMBEDDING_DIM, EMBEDDING_ENABLED, EMBEDDING_ENDPOINT, EMBEDDING_PROVIDER
 from .schemas import ChatMessage, Note, Notebook, ParsingSettings, Source, now_iso
 from .services.global_db import GlobalDB
-from .services.index_service import clear_notebook_blocks, index_source, remove_source_blocks
+from .services.index_service import index_source
 from .services.embedding_service import EmbeddingConfig, EmbeddingEngine, EmbeddingProviderConfig
 from .services.notebook_db import db_for_notebook
 
@@ -193,7 +193,6 @@ class InMemoryStore:
         self.notes.pop(notebook_id, None)
         self.chat_versions.pop(notebook_id, None)
         self.parsing_settings.pop(notebook_id, None)
-        clear_notebook_blocks(notebook_id)
         _global_db.delete_notebook(notebook_id)
         return True
 
@@ -305,7 +304,6 @@ class InMemoryStore:
         source = self.sources.get(source_id)
         if not source:
             return False
-        remove_source_blocks(source.notebook_id, source_id)
         parsing_file = CHUNKS_DIR / source.notebook_id / f"{source.id}.json"
         parsing_file.unlink(missing_ok=True)
         notebook_db = db_for_notebook(source.notebook_id)
