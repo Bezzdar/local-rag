@@ -35,7 +35,7 @@ def build_answer(mode: str, message: str, citations: list[Citation]) -> str:
     spec = CHAT_MODES_BY_CODE[mode]
 
     if mode == "agent":
-        return "Агент: режим находится в разработке. Пока доступна заглушка, см. TODO.md."
+        return "Агент: режим находится в разработке."
 
     if not spec.uses_retrieval:
         return f"{spec.title}: ответ на запрос '{message}' с учетом контекста переписки."

@@ -35,13 +35,6 @@ def get_notebook_blocks(notebook_id: str) -> list[dict[str, Any]]:
         notebook_db.close()
 
 
-def remove_source_blocks(notebook_id: str, source_id: str) -> None:
-    return
-
-
-def clear_notebook_blocks(notebook_id: str) -> None:
-    return
-
 
 async def index_source(
     notebook_id: str,
