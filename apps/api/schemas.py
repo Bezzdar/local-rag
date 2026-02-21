@@ -33,6 +33,7 @@ class Source(BaseModel):
     is_enabled: bool = True
     has_docs: bool = True
     has_parsing: bool = False
+    has_base: bool = False
     embeddings_status: Literal["available", "unavailable"] = "available"
     index_warning: str | None = None
     individual_config: dict[str, int | bool | str | None] = Field(

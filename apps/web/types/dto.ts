@@ -44,9 +44,9 @@ export const CitationSchema = z.object({
   source_id: z.string(),
   filename: z.string(),
   location: z.object({
-    page: z.number().optional(),
-    sheet: z.string().optional(),
-    paragraph: z.number().optional(),
+    page: z.number().nullish(),
+    sheet: z.string().nullish(),
+    paragraph: z.number().nullish(),
   }),
   snippet: z.string(),
   score: z.number(),

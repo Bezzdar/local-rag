@@ -283,6 +283,7 @@ class InMemoryStore:
             notebook_db.close()
             source.status = "indexed"
             source.has_parsing = True
+            source.has_base = True
             if vector_ready:
                 source.embeddings_status = "available"
                 source.index_warning = None
@@ -295,6 +296,7 @@ class InMemoryStore:
         except Exception:
             logger.exception("[index] failed for source %s", source_id)
             source.status = "failed"
+            source.has_base = False
             try:
                 _global_db.upsert_source(source.model_dump())
             except Exception:
@@ -357,6 +359,7 @@ class InMemoryStore:
         notebook_db.conn.commit()
         notebook_db.close()
         source.has_parsing = False
+        source.has_base = False
         source.status = "new"
         _global_db.upsert_source(source.model_dump())
         return True
