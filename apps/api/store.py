@@ -401,6 +401,103 @@ class InMemoryStore:
         notebook_db.set_document_enabled(source_id, enabled)
         notebook_db.close()
 
+    def duplicate_notebook(self, notebook_id: str) -> Notebook | None:
+        """Дублировать ноутбук со всеми источниками, парсингом и базой данных."""
+        import shutil
+        original = self.notebooks.get(notebook_id)
+        if not original:
+            return None
+
+        # Создать новый ноутбук
+        new_title = f"Копия: {original.title}"
+        new_nb = self.create_notebook(new_title)
+        new_nb_id = new_nb.id
+
+        # Скопировать настройки парсинга
+        orig_settings = self.get_parsing_settings(notebook_id)
+        self.update_parsing_settings(new_nb_id, orig_settings)
+
+        # Построить маппинг old_source_id -> new_source_id
+        orig_sources = [s for s in self.sources.values() if s.notebook_id == notebook_id]
+        id_map: dict[str, str] = {}
+        for src in orig_sources:
+            new_src_id = str(uuid4())
+            id_map[src.id] = new_src_id
+
+        # Скопировать файлы документов и создать новые записи источников
+        new_nb_docs_dir = DOCS_DIR / new_nb_id
+        new_nb_docs_dir.mkdir(parents=True, exist_ok=True)
+        new_nb_chunks_dir = CHUNKS_DIR / new_nb_id
+        new_nb_chunks_dir.mkdir(parents=True, exist_ok=True)
+
+        for src in orig_sources:
+            new_src_id = id_map[src.id]
+            orig_path = Path(src.file_path)
+            new_path = new_nb_docs_dir / orig_path.name
+
+            # Копировать физический файл (если существует)
+            if orig_path.exists():
+                shutil.copy2(str(orig_path), str(new_path))
+
+            # Копировать JSON-файл чанков (если существует)
+            orig_chunks_file = CHUNKS_DIR / notebook_id / f"{src.id}.json"
+            new_chunks_file = new_nb_chunks_dir / f"{new_src_id}.json"
+            if orig_chunks_file.exists():
+                shutil.copy2(str(orig_chunks_file), str(new_chunks_file))
+
+            # Создать новую запись источника
+            new_source = Source(
+                id=new_src_id,
+                notebook_id=new_nb_id,
+                filename=src.filename,
+                file_path=str(new_path),
+                file_type=src.file_type,
+                size_bytes=src.size_bytes,
+                status=src.status if orig_path.exists() else "new",
+                added_at=now_iso(),
+                is_enabled=src.is_enabled,
+                has_docs=new_path.exists(),
+                has_parsing=src.has_parsing and orig_chunks_file.exists(),
+                embeddings_status=src.embeddings_status,
+                index_warning=src.index_warning,
+                individual_config=dict(src.individual_config),
+            )
+            self.sources[new_src_id] = new_source
+            _global_db.upsert_source(new_source.model_dump())
+
+        # Скопировать и обновить SQLite базу данных ноутбука
+        orig_db_path = NOTEBOOKS_DB_DIR / f"{notebook_id}.db"
+        new_db_path = NOTEBOOKS_DB_DIR / f"{new_nb_id}.db"
+        if orig_db_path.exists():
+            shutil.copy2(str(orig_db_path), str(new_db_path))
+            # Обновить ссылки на источники в новой БД
+            import sqlite3
+            conn = sqlite3.connect(str(new_db_path))
+            try:
+                for old_id, new_id in id_map.items():
+                    orig_src = next((s for s in orig_sources if s.id == old_id), None)
+                    new_file_path = str(new_nb_docs_dir / Path(orig_src.file_path).name) if orig_src else ""
+                    # Обновить таблицу documents
+                    conn.execute(
+                        "UPDATE documents SET doc_id=?, source_id=?, filepath=? WHERE doc_id=?",
+                        (new_id, new_id, new_file_path, old_id),
+                    )
+                    # Обновить таблицу chunks
+                    conn.execute(
+                        "UPDATE chunks SET doc_id=? WHERE doc_id=?",
+                        (new_id, old_id),
+                    )
+                    # Обновить таблицу document_tags
+                    conn.execute(
+                        "UPDATE document_tags SET doc_id=? WHERE doc_id=?",
+                        (new_id, old_id),
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+
+        return new_nb
+
     def add_message(self, notebook_id: str, role: str, content: str) -> ChatMessage:
         message = ChatMessage(
             id=str(uuid4()),

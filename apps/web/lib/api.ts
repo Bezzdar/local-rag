@@ -19,6 +19,14 @@ export const api = {
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) },
       NotebookSchema,
     ),
+  renameNotebook: (notebookId: string, title: string) =>
+    request(
+      `/api/notebooks/${notebookId}`,
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) },
+      NotebookSchema,
+    ),
+  duplicateNotebook: (notebookId: string) =>
+    request(`/api/notebooks/${notebookId}/duplicate`, { method: 'POST' }, NotebookSchema),
   deleteNotebook: async (notebookId: string) => {
     const response = await fetch(`${apiBase}/api/notebooks/${notebookId}`, { method: 'DELETE' });
     if (!response.ok) {
