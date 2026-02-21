@@ -87,6 +87,26 @@ export default function RuntimeSettings() {
     setInfo(message);
   };
 
+  const saveEmbeddingSettings = async () => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+    }
+    try {
+      await fetch(`${apiBase}/api/settings/embedding`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: draft.embeddingProvider,
+          base_url: draft.embeddingProvider !== 'none' ? acceptedBase : '',
+          model: draft.embeddingModel,
+        }),
+      });
+      setInfo('Настройки эмбеддинга сохранены.');
+    } catch {
+      setInfo('Ошибка при сохранении настроек эмбеддинга.');
+    }
+  };
+
   const acceptPort = () => {
     const normalized = draft.llmBase.trim();
     setAcceptedBase(normalized);
@@ -354,7 +374,7 @@ export default function RuntimeSettings() {
 
               {embeddingModelsError ? <p className="text-[11px] text-red-600">{embeddingModelsError}</p> : null}
 
-              <button type="button" className="rounded border px-2 py-1 text-slate-900" onClick={() => saveDraft('Настройки эмбеддинга сохранены.')}>
+              <button type="button" className="rounded border px-2 py-1 text-slate-900" onClick={saveEmbeddingSettings}>
                 Сохранить
               </button>
             </div>

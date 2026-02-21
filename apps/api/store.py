@@ -57,6 +57,24 @@ class InMemoryStore:
             )
         return self._embedding_engine
 
+    def reconfigure_embedding(self, provider: str, base_url: str, model_name: str) -> None:
+        """Пересоздать движок эмбеддингов с новыми настройками провайдера/модели."""
+        self._embedding_engine = EmbeddingEngine(
+            EmbeddingConfig(
+                embedding_dim=EMBEDDING_DIM,
+                provider=EmbeddingProviderConfig(
+                    base_url=base_url or EMBEDDING_BASE_URL,
+                    model_name=model_name,
+                    provider=provider or EMBEDDING_PROVIDER,
+                    endpoint=EMBEDDING_ENDPOINT,
+                    enabled=EMBEDDING_ENABLED,
+                    fallback_dim=EMBEDDING_DIM,
+                )
+            )
+        )
+        from .services.search_service import reconfigure_engine
+        reconfigure_engine(provider or EMBEDDING_PROVIDER, base_url or EMBEDDING_BASE_URL, model_name)
+
     def seed_data(self) -> None:
         # Восстановить ноутбуки из персистентного хранилища
         for nb_dict in _global_db.load_all_notebooks():

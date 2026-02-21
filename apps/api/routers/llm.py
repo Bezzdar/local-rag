@@ -2,6 +2,7 @@
 
 # --- Imports ---
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 import httpx
 
 router = APIRouter(prefix='/api', tags=['llm'])
@@ -77,3 +78,21 @@ async def list_llm_models(
     if normalized_purpose == 'embedding':
         return [name for name in model_names if _is_embedding_model(name)]
     return model_names
+
+
+class EmbeddingConfigPayload(BaseModel):
+    provider: str = "ollama"
+    base_url: str = ""
+    model: str = ""
+
+
+@router.post('/settings/embedding')
+async def update_embedding_settings(payload: EmbeddingConfigPayload) -> dict:
+    """Применить выбранную пользователем конфигурацию эмбеддинг-модели."""
+    from ..store import store
+    store.reconfigure_embedding(
+        provider=payload.provider.strip().lower() or "ollama",
+        base_url=payload.base_url.strip().rstrip("/"),
+        model_name=payload.model.strip(),
+    )
+    return {"ok": True}
