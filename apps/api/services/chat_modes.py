@@ -31,11 +31,12 @@ def normalize_chat_mode(raw_mode: str) -> str:
     return mode if mode in CHAT_MODES_BY_CODE else DEFAULT_CHAT_MODE
 
 
-def build_answer(mode: str, message: str, citations: list[Citation]) -> str:
+def build_answer(mode: str, message: str, citations: list[Citation], agent_id: str = "") -> str:
     spec = CHAT_MODES_BY_CODE[mode]
 
     if mode == "agent":
-        return "Агент: режим находится в разработке."
+        label = f"Агент [{agent_id}]" if agent_id else "Агент"
+        return f"{label}: режим находится в разработке."
 
     if not spec.uses_retrieval:
         return f"{spec.title}: ответ на запрос '{message}' с учетом контекста переписки."

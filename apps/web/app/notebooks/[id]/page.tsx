@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { beginClear, failClear, finishClear, registerStreamCloser, shouldIgnoreStream, unregisterStreamCloser, useChatStore } from '@/src/stores/chatStore';
 import { setKeepAlive } from '@/src/stores/connectionStore';
 import { setCurrentMode, useModeStore } from '@/src/stores/modeStore';
+import { setSelectedAgent, useAgentStore } from '@/src/stores/agentStore';
 
 const LEFT_MIN = 240;
 const LEFT_MAX = 520;
@@ -40,6 +41,7 @@ export default function NotebookWorkspacePage() {
   const queryClient = useQueryClient();
 
   const { currentMode } = useModeStore();
+  const { selectedAgentId } = useAgentStore();
   const { isClearing } = useChatStore();
   const [streaming, setStreaming] = useState('');
   const [citations, setCitations] = useState<Citation[]>([]);
@@ -57,6 +59,8 @@ export default function NotebookWorkspacePage() {
   const hasAnyNotebook = (notebooks.data?.length ?? 0) > 0;
   const fallbackNotebookId = notebooks.data?.[0]?.id;
   const allowNotebookQueries = notebooks.isSuccess && notebookExists;
+
+  const agents = useQuery({ queryKey: ['agents'], queryFn: api.listAgents });
 
   const sources = useQuery({ queryKey: ['sources', notebookId], queryFn: () => api.listSources(notebookId), enabled: allowNotebookQueries });
   const messages = useQuery({ queryKey: ['messages', notebookId], queryFn: () => api.listMessages(notebookId), enabled: allowNotebookQueries });
@@ -193,6 +197,7 @@ export default function NotebookWorkspacePage() {
       notebookId,
       message: text,
       mode: streamMode,
+      agentId: currentMode === 'agent' ? selectedAgentId : undefined,
       selectedSourceIds,
       handlers: {
         onToken: (token) => {
@@ -373,10 +378,13 @@ export default function NotebookWorkspacePage() {
         <ChatPanel
           notebookId={notebookId}
           mode={currentMode}
+          agentId={selectedAgentId}
+          agents={agents.data ?? []}
           messages={messages.data}
           streaming={streaming}
           citations={citations}
           onModeChange={(nextMode) => setCurrentMode(nextMode as ChatMode)}
+          onAgentChange={(agentId) => setSelectedAgent(agentId)}
           onSend={sendMessage}
           disableSend={isClearing || clearChat.isPending}
           sendDisabledReason={isClearing || clearChat.isPending ? 'Очистка в процессе…' : undefined}

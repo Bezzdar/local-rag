@@ -22,6 +22,7 @@ export function openChatStream(params: {
   notebookId: string;
   message: string;
   mode: ChatMode;
+  agentId?: string;
   selectedSourceIds: string[];
   handlers: StreamHandlers;
 }): () => void {
@@ -35,6 +36,7 @@ export function openChatStream(params: {
     model: runtimeConfig.llmModel,
     base_url: runtimeConfig.llmBase,
     max_history: String(runtimeConfig.maxHistory),
+    ...(params.agentId ? { agent_id: params.agentId } : {}),
   });
 
   if (runtimeConfig.debugModelMode) {

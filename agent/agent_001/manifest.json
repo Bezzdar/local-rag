@@ -1,0 +1,7 @@
+{
+  "id": "agent_001",
+  "name": "Dash",
+  "description": "Self-learning data agent for text-to-SQL insights. Grounds SQL generation in 6 layers of context and improves automatically with every query.",
+  "version": "1.0.0",
+  "requires": ["postgresql", "openai"]
+}

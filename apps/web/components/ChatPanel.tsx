@@ -1,13 +1,15 @@
 'use client';
 
 import { logClientEvent } from '@/lib/clientLogger';
-import { ChatMessage, Citation } from '@/types/dto';
+import { ChatMessage, Citation, AgentManifest } from '@/types/dto';
 import { CHAT_MODE_OPTIONS, ChatMode } from '@/lib/sse';
 import { useState } from 'react';
 
 type Props = {
   notebookId: string;
   mode: ChatMode;
+  agentId: string;
+  agents: AgentManifest[];
   messages: ChatMessage[];
   streaming: string;
   citations: Citation[];
@@ -16,6 +18,7 @@ type Props = {
   clearDisabledReason?: string;
   sendDisabledReason?: string;
   onModeChange: (mode: ChatMode) => void;
+  onAgentChange: (agentId: string) => void;
   onSend: (text: string) => void;
   onClearChat: () => void;
   onSaveToNotes: (text: string) => void;
@@ -40,6 +43,22 @@ export default function ChatPanel(props: Props) {
           >
             Очистить чат
           </button>
+          {props.mode === 'agent' && props.agents.length > 0 && (
+            <select
+              className="rounded border border-slate-300 p-2 text-sm"
+              value={props.agentId}
+              onChange={(event) => {
+                logClientEvent({ event: 'ui.agent.change', notebookId: props.notebookId, metadata: { agentId: event.target.value } });
+                props.onAgentChange(event.target.value);
+              }}
+            >
+              {props.agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             className="rounded border border-slate-300 p-2 text-sm"
             value={props.mode}

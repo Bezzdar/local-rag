@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { initializeConnectionStore, setKeepAlive } from '@/src/stores/connectionStore';
 import { initializeModeStore } from '@/src/stores/modeStore';
+import { initializeAgentStore } from '@/src/stores/agentStore';
 import { getRuntimeConfig, setRuntimeConfig } from '@/lib/runtime-config';
 
 export default function StoreInitializer() {
@@ -15,6 +16,7 @@ export default function StoreInitializer() {
     });
     initializeConnectionStore();
     initializeModeStore();
+    initializeAgentStore();
     setKeepAlive(true);
   }, []);
 
