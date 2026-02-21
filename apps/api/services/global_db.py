@@ -35,6 +35,11 @@ class GlobalDB:
                 self._conn.commit()
             except Exception:
                 pass  # Column already exists
+            try:
+                self._conn.execute("ALTER TABLE sources ADD COLUMN has_base INTEGER NOT NULL DEFAULT 0")
+                self._conn.commit()
+            except Exception:
+                pass  # Column already exists
             self._conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS notebooks (
@@ -56,6 +61,7 @@ class GlobalDB:
                     is_enabled INTEGER NOT NULL DEFAULT 1,
                     has_docs INTEGER NOT NULL DEFAULT 1,
                     has_parsing INTEGER NOT NULL DEFAULT 0,
+                    has_base INTEGER NOT NULL DEFAULT 0,
                     embeddings_status TEXT NOT NULL DEFAULT 'unavailable',
                     index_warning TEXT,
                     individual_config TEXT
@@ -106,13 +112,14 @@ class GlobalDB:
                 """
                 INSERT INTO sources (
                     id, notebook_id, filename, file_path, file_type, size_bytes, status,
-                    added_at, is_enabled, has_docs, has_parsing, embeddings_status, index_warning, individual_config
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    added_at, is_enabled, has_docs, has_parsing, has_base, embeddings_status, index_warning, individual_config
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     filename=excluded.filename, file_path=excluded.file_path,
                     file_type=excluded.file_type, size_bytes=excluded.size_bytes,
                     status=excluded.status, is_enabled=excluded.is_enabled,
                     has_docs=excluded.has_docs, has_parsing=excluded.has_parsing,
+                    has_base=excluded.has_base,
                     embeddings_status=excluded.embeddings_status,
                     index_warning=excluded.index_warning, individual_config=excluded.individual_config
                 """,
@@ -128,6 +135,7 @@ class GlobalDB:
                     1 if src.get("is_enabled", True) else 0,
                     1 if src.get("has_docs", True) else 0,
                     1 if src.get("has_parsing", False) else 0,
+                    1 if src.get("has_base", False) else 0,
                     src.get("embeddings_status", "unavailable"),
                     src.get("index_warning"),
                     indiv_json,
@@ -158,6 +166,7 @@ class GlobalDB:
             d["is_enabled"] = bool(d["is_enabled"])
             d["has_docs"] = bool(d["has_docs"])
             d["has_parsing"] = bool(d["has_parsing"])
+            d["has_base"] = bool(d.get("has_base", 0))
             result.append(d)
         return result
 

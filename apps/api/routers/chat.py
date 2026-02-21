@@ -141,7 +141,7 @@ async def chat_stream(
                 yield to_sse("done", {"message_id": ""})
                 return
 
-            yield to_sse("citations", [citation.model_dump() for citation in citations])
+            yield to_sse("citations", [citation.model_dump(exclude_none=True) for citation in citations])
 
             if store.get_chat_version(notebook_id) != stream_version:
                 yield to_sse("done", {"message_id": ""})
@@ -169,7 +169,7 @@ async def chat_stream(
             yield to_sse("token", {"text": token})
             await asyncio.sleep(0.04)
 
-        yield to_sse("citations", [citation.model_dump() for citation in citations])
+        yield to_sse("citations", [citation.model_dump(exclude_none=True) for citation in citations])
 
         if store.get_chat_version(notebook_id) != stream_version:
             yield to_sse("done", {"message_id": ""})
