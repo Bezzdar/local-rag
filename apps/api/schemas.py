@@ -51,6 +51,7 @@ class ParsingSettings(BaseModel):
     min_chunk_size: int = 50
     ocr_enabled: bool = True
     ocr_language: str = "rus+eng"
+    auto_parse_on_upload: bool = False
 
 
 class ChatMessage(BaseModel):

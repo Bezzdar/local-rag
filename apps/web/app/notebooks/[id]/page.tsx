@@ -89,11 +89,6 @@ export default function NotebookWorkspacePage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sources', notebookId] }),
   });
 
-  const deleteAllFiles = useMutation({
-    mutationFn: () => api.deleteAllSourceFiles(notebookId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sources', notebookId] }),
-  });
-
   const createNote = useMutation({
     mutationFn: ({ title, content }: { title: string; content: string }) => api.createNote(notebookId, title, content),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notes', notebookId] }),
@@ -326,23 +321,32 @@ export default function NotebookWorkspacePage() {
               onToggleSource={handleToggleSource}
               onSelectAllSources={() => setExplicitSelection(allSourceIds)}
               onClearSourceSelection={() => setExplicitSelection([])}
-              onDeleteAllSources={() => {
-                if (window.confirm(`Удалить все файлы документов (${sources.data.filter((s) => s.has_docs).length})?`)) {
-                  deleteAllFiles.mutate();
-                }
+              onDeleteSelectedSources={() => {
+                handleDeleteSources(selectedSourceIds, `Удалить ${selectedSourceIds.length} выбранных документов?`);
               }}
               onDeleteUnselectedSources={() => {
-                const unselected = sources.data.filter((source) => !selectedSourceIds.includes(source.id) && (source.has_docs ?? false));
-                handleDeleteSources(unselected.map((item) => item.id), `Удалить ${unselected.length} невыбранных файлов?`);
+                const unselected = sources.data
+                  .filter((source) => !selectedSourceIds.includes(source.id))
+                  .map((source) => source.id);
+                handleDeleteSources(unselected, `Удалить ${unselected.length} невыбранных документов?`);
+              }}
+              onParseAllSources={() => {
+                const ids = sources.data.map((s) => s.id);
+                if (ids.length === 0) return;
+                ids.forEach((id) => reparseSource.mutate(id));
+              }}
+              onParseSelectedSources={() => {
+                if (selectedSourceIds.length === 0) return;
+                selectedSourceIds.forEach((id) => reparseSource.mutate(id));
               }}
               onUpload={(file) => uploadSource.mutate(file)}
-              onDeleteSource={(source) => handleDeleteSources([source.id], `Удалить файл ${source.filename}?`)}
+              onDeleteSource={(source) => handleDeleteSources([source.id], `Удалить документ ${source.filename} и все связанные данные?`)}
               onEraseSource={(source) => {
                 if (window.confirm(`Стереть parsing/base данные для ${source.filename}?`)) {
                   eraseSource.mutate(source.id);
                 }
               }}
-              onToggleEnabled={(source, enabled) => updateSource.mutate({ sourceId: source.id, payload: { is_enabled: enabled } })}
+              onParseSource={(source) => reparseSource.mutate(source.id)}
               onOpenConfig={(source) =>
                 setSourceConfigModal({
                   source,

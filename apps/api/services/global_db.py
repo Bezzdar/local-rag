@@ -29,6 +29,12 @@ class GlobalDB:
 
     def _migrate(self) -> None:
         with self._lock:
+            # Add missing columns for older databases
+            try:
+                self._conn.execute("ALTER TABLE parsing_settings ADD COLUMN auto_parse_on_upload INTEGER NOT NULL DEFAULT 0")
+                self._conn.commit()
+            except Exception:
+                pass  # Column already exists
             self._conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS notebooks (
@@ -61,7 +67,8 @@ class GlobalDB:
                     chunk_overlap INTEGER NOT NULL DEFAULT 64,
                     min_chunk_size INTEGER NOT NULL DEFAULT 50,
                     ocr_enabled INTEGER NOT NULL DEFAULT 1,
-                    ocr_language TEXT NOT NULL DEFAULT 'rus+eng'
+                    ocr_language TEXT NOT NULL DEFAULT 'rus+eng',
+                    auto_parse_on_upload INTEGER NOT NULL DEFAULT 0
                 );
                 """
             )
@@ -164,19 +171,20 @@ class GlobalDB:
         min_chunk_size: int,
         ocr_enabled: bool,
         ocr_language: str,
+        auto_parse_on_upload: bool = False,
     ) -> None:
         with self._lock:
             self._conn.execute(
                 """
                 INSERT INTO parsing_settings
-                    (notebook_id, chunk_size, chunk_overlap, min_chunk_size, ocr_enabled, ocr_language)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (notebook_id, chunk_size, chunk_overlap, min_chunk_size, ocr_enabled, ocr_language, auto_parse_on_upload)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(notebook_id) DO UPDATE SET
                     chunk_size=excluded.chunk_size, chunk_overlap=excluded.chunk_overlap,
                     min_chunk_size=excluded.min_chunk_size, ocr_enabled=excluded.ocr_enabled,
-                    ocr_language=excluded.ocr_language
+                    ocr_language=excluded.ocr_language, auto_parse_on_upload=excluded.auto_parse_on_upload
                 """,
-                (notebook_id, chunk_size, chunk_overlap, min_chunk_size, 1 if ocr_enabled else 0, ocr_language),
+                (notebook_id, chunk_size, chunk_overlap, min_chunk_size, 1 if ocr_enabled else 0, ocr_language, 1 if auto_parse_on_upload else 0),
             )
             self._conn.commit()
 
@@ -187,5 +195,11 @@ class GlobalDB:
         for row in rows:
             d = dict(row)
             d["ocr_enabled"] = bool(d["ocr_enabled"])
+            d["auto_parse_on_upload"] = bool(d.get("auto_parse_on_upload", 0))
             result.append(d)
         return result
+
+    def delete_source(self, source_id: str) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM sources WHERE id=?", (source_id,))
+            self._conn.commit()

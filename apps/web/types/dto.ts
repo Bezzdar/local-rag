@@ -73,6 +73,7 @@ export const ParsingSettingsSchema = z.object({
   min_chunk_size: z.number(),
   ocr_enabled: z.boolean(),
   ocr_language: z.string(),
+  auto_parse_on_upload: z.boolean().default(false),
 });
 
 export type ParsingSettings = z.infer<typeof ParsingSettingsSchema>;
