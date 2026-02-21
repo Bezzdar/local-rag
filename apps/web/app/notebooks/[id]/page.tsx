@@ -53,10 +53,15 @@ export default function NotebookWorkspacePage() {
   const [sourceConfigModal, setSourceConfigModal] = useState<SourceConfigModalState | null>(null);
 
   const notebooks = useQuery({ queryKey: ['notebooks'], queryFn: api.listNotebooks });
-  const sources = useQuery({ queryKey: ['sources', notebookId], queryFn: () => api.listSources(notebookId) });
-  const messages = useQuery({ queryKey: ['messages', notebookId], queryFn: () => api.listMessages(notebookId) });
-  const notes = useQuery({ queryKey: ['notes', notebookId], queryFn: () => api.listNotes(notebookId) });
-  const parsingSettings = useQuery({ queryKey: ['parsing-settings', notebookId], queryFn: () => api.getParsingSettings(notebookId) });
+  const notebookExists = notebooks.data?.some((notebook) => notebook.id === notebookId) ?? false;
+  const hasAnyNotebook = (notebooks.data?.length ?? 0) > 0;
+  const fallbackNotebookId = notebooks.data?.[0]?.id;
+  const allowNotebookQueries = notebooks.isSuccess && notebookExists;
+
+  const sources = useQuery({ queryKey: ['sources', notebookId], queryFn: () => api.listSources(notebookId), enabled: allowNotebookQueries });
+  const messages = useQuery({ queryKey: ['messages', notebookId], queryFn: () => api.listMessages(notebookId), enabled: allowNotebookQueries });
+  const notes = useQuery({ queryKey: ['notes', notebookId], queryFn: () => api.listNotes(notebookId), enabled: allowNotebookQueries });
+  const parsingSettings = useQuery({ queryKey: ['parsing-settings', notebookId], queryFn: () => api.getParsingSettings(notebookId), enabled: allowNotebookQueries });
 
 
   const uploadSource = useMutation({
@@ -149,6 +154,21 @@ export default function NotebookWorkspacePage() {
     },
     [],
   );
+
+  useEffect(() => {
+    if (!notebooks.isSuccess) {
+      return;
+    }
+
+    if (!hasAnyNotebook) {
+      router.replace('/notebooks');
+      return;
+    }
+
+    if (!notebookExists && fallbackNotebookId) {
+      router.replace(`/notebooks/${fallbackNotebookId}`);
+    }
+  }, [fallbackNotebookId, hasAnyNotebook, notebookExists, notebooks.isSuccess, router]);
 
   const sendMessage = (text: string) => {
     logClientEvent({ event: 'ui.message.send_attempt', notebookId, metadata: { length: text.length, mode: currentMode } });
@@ -263,10 +283,16 @@ export default function NotebookWorkspacePage() {
     window.addEventListener('mouseup', stop);
   };
 
-  if (notebooks.isLoading || sources.isLoading || messages.isLoading || notes.isLoading || parsingSettings.isLoading) {
+  if (notebooks.isLoading || (allowNotebookQueries && (sources.isLoading || messages.isLoading || notes.isLoading || parsingSettings.isLoading))) {
     return <div className="p-6">Loading workspace...</div>;
   }
-  if (notebooks.isError || sources.isError || messages.isError || notes.isError || parsingSettings.isError || !notebooks.data || !sources.data || !messages.data || !notes.data || !parsingSettings.data) {
+  if (notebooks.isError || (allowNotebookQueries && (sources.isError || messages.isError || notes.isError || parsingSettings.isError))) {
+    return <div className="p-6">Failed to load notebook workspace.</div>;
+  }
+  if (!allowNotebookQueries) {
+    return <div className="p-6">Notebook not found. Redirecting…</div>;
+  }
+  if (!notebooks.data || !sources.data || !messages.data || !notes.data || !parsingSettings.data) {
     return <div className="p-6">Failed to load notebook workspace.</div>;
   }
 
