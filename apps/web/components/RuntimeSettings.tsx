@@ -21,8 +21,8 @@ function getInitialDraft(): RuntimeDraft {
 
   const fallback: RuntimeDraft = {
     llmBase: runtime.llmBase || getDefaultOllamaBase(),
-    provider: runtime.llmProvider,
-    model: runtime.llmModel,
+    provider: 'none',
+    model: '',
     embeddingProvider: 'ollama',
     embeddingModel: '',
     maxHistory: runtime.maxHistory,
@@ -42,8 +42,8 @@ function getInitialDraft(): RuntimeDraft {
     const parsed = JSON.parse(raw) as Partial<RuntimeDraft>;
     return {
       llmBase: (parsed.llmBase ?? runtime.llmBase ?? getDefaultOllamaBase()).trim(),
-      provider: parsed.provider === 'ollama' || parsed.provider === 'openai' ? parsed.provider : 'none',
-      model: (parsed.model ?? runtime.llmModel).trim(),
+      provider: 'none',
+      model: '',
       embeddingProvider: parsed.embeddingProvider === 'ollama' || parsed.embeddingProvider === 'openai' ? parsed.embeddingProvider : 'ollama',
       embeddingModel: (parsed.embeddingModel ?? '').trim(),
       maxHistory: Math.min(50, Math.max(1, Number(parsed.maxHistory ?? runtime.maxHistory) || runtime.maxHistory)),
