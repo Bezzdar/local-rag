@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from .config import CHUNKS_DIR, DOCS_DIR, NOTEBOOKS_DB_DIR, EMBEDDING_BASE_URL, EMBEDDING_DIM, EMBEDDING_ENABLED, EMBEDDING_ENDPOINT, EMBEDDING_PROVIDER
 from .schemas import ChatMessage, Note, Notebook, ParsingSettings, Source, now_iso
+from .services.global_db import GlobalDB
 from .services.index_service import clear_notebook_blocks, index_source, remove_source_blocks
 from .services.embedding_service import EmbeddingConfig, EmbeddingEngine, EmbeddingProviderConfig
 from .services.notebook_db import db_for_notebook
@@ -23,6 +24,8 @@ NOTEBOOKS_DB_DIR.mkdir(parents=True, exist_ok=True)
 DEMO_NOTEBOOK_ID = "00000000-0000-0000-0000-000000000001"
 
 logger = logging.getLogger(__name__)
+
+_global_db = GlobalDB()
 
 
 # --- Основные блоки ---
@@ -55,9 +58,42 @@ class InMemoryStore:
         return self._embedding_engine
 
     def seed_data(self) -> None:
-        if self.notebooks:
-            return
+        # Восстановить ноутбуки из персистентного хранилища
+        for nb_dict in _global_db.load_all_notebooks():
+            notebook = Notebook(**nb_dict)
+            self.notebooks[notebook.id] = notebook
+            self.messages.setdefault(notebook.id, [])
+            self.notes.setdefault(notebook.id, [])
+            self.chat_versions.setdefault(notebook.id, 0)
 
+        # Восстановить настройки парсинга
+        for ps_dict in _global_db.load_all_parsing_settings():
+            nb_id = ps_dict.pop("notebook_id")
+            self.parsing_settings[nb_id] = ParsingSettings(**ps_dict)
+
+        # Восстановить источники; исправить устаревшие состояния
+        for src_dict in _global_db.load_all_sources():
+            if src_dict["notebook_id"] not in self.notebooks:
+                continue
+            changed = False
+            # Если файл физически удалён — обновить флаг
+            if src_dict["has_docs"] and not Path(src_dict["file_path"]).exists():
+                src_dict["has_docs"] = False
+                changed = True
+            # Индексация прервана рестартом — пометить как failed
+            if src_dict["status"] == "indexing":
+                src_dict["status"] = "failed"
+                changed = True
+            if changed:
+                _global_db.upsert_source(src_dict)
+            self.sources[src_dict["id"]] = Source(**src_dict)
+
+        # Первый запуск: ноутбуков нет → создать демо
+        if not self.notebooks:
+            self._seed_demo()
+
+    def _seed_demo(self) -> None:
+        """Создаёт демо-ноутбук при первом запуске и персистирует его."""
         ts = now_iso()
         notebook = Notebook(
             id=DEMO_NOTEBOOK_ID,
@@ -69,7 +105,17 @@ class InMemoryStore:
         self.messages.setdefault(notebook.id, [])
         self.notes.setdefault(notebook.id, [])
         self.chat_versions.setdefault(notebook.id, 0)
-        self.parsing_settings.setdefault(notebook.id, ParsingSettings())
+        settings = ParsingSettings()
+        self.parsing_settings[notebook.id] = settings
+        _global_db.upsert_notebook(notebook.id, notebook.title, notebook.created_at, notebook.updated_at)
+        _global_db.upsert_parsing_settings(
+            notebook.id,
+            settings.chunk_size,
+            settings.chunk_overlap,
+            settings.min_chunk_size,
+            settings.ocr_enabled,
+            settings.ocr_language,
+        )
 
         demo_dir = DOCS_DIR / notebook.id
         demo_dir.mkdir(parents=True, exist_ok=True)
@@ -98,8 +144,18 @@ class InMemoryStore:
         self.messages.setdefault(notebook.id, [])
         self.notes.setdefault(notebook.id, [])
         self.chat_versions.setdefault(notebook.id, 0)
-        self.parsing_settings.setdefault(notebook.id, ParsingSettings())
+        settings = ParsingSettings()
+        self.parsing_settings[notebook.id] = settings
         (DOCS_DIR / notebook.id).mkdir(parents=True, exist_ok=True)
+        _global_db.upsert_notebook(notebook.id, notebook.title, notebook.created_at, notebook.updated_at)
+        _global_db.upsert_parsing_settings(
+            notebook.id,
+            settings.chunk_size,
+            settings.chunk_overlap,
+            settings.min_chunk_size,
+            settings.ocr_enabled,
+            settings.ocr_language,
+        )
         return notebook
 
     def update_notebook_title(self, notebook_id: str, title: str) -> Notebook | None:
@@ -108,6 +164,7 @@ class InMemoryStore:
             return None
         notebook.title = title
         notebook.updated_at = now_iso()
+        _global_db.upsert_notebook(notebook.id, notebook.title, notebook.created_at, notebook.updated_at)
         return notebook
 
     def delete_notebook(self, notebook_id: str) -> bool:
@@ -137,6 +194,7 @@ class InMemoryStore:
         self.chat_versions.pop(notebook_id, None)
         self.parsing_settings.pop(notebook_id, None)
         clear_notebook_blocks(notebook_id)
+        _global_db.delete_notebook(notebook_id)
         return True
 
     def add_source_from_path(self, notebook_id: str, path: str, indexed: bool = False) -> Source:
@@ -156,6 +214,7 @@ class InMemoryStore:
             has_parsing=indexed,
         )
         self.sources[source.id] = source
+        _global_db.upsert_source(source.model_dump())
         if indexed:
             return source
         thread = threading.Thread(target=self._index_source_sync, args=(source.id,), daemon=True)
@@ -212,15 +271,21 @@ class InMemoryStore:
                 source.embeddings_status = "unavailable"
                 source.index_warning = "indexed (text-only)"
                 logger.warning("[index] %s indexed (text-only): embeddings unavailable", source.id)
+            _global_db.upsert_source(source.model_dump())
         except Exception:
             logger.exception("[index] failed for source %s", source_id)
             source.status = "failed"
-
+            try:
+                _global_db.upsert_source(source.model_dump())
+            except Exception:
+                logger.exception("[persist] failed to persist failed status for source %s", source_id)
 
     def reparse_source(self, source_id: str) -> Source | None:
         source = self.sources.get(source_id)
         if not source:
             return None
+        source.status = "indexing"
+        _global_db.upsert_source(source.model_dump())
         thread = threading.Thread(target=self._index_source_sync, args=(source.id,), daemon=True)
         thread.start()
         return source
@@ -233,6 +298,7 @@ class InMemoryStore:
         if path.exists() and path.is_file():
             path.unlink(missing_ok=True)
         source.has_docs = False
+        _global_db.upsert_source(source.model_dump())
         return True
 
     def erase_source_data(self, source_id: str) -> bool:
@@ -248,6 +314,7 @@ class InMemoryStore:
         notebook_db.close()
         source.has_parsing = False
         source.status = "new"
+        _global_db.upsert_source(source.model_dump())
         return True
 
     def delete_all_source_files(self, notebook_id: str) -> int:
@@ -260,12 +327,25 @@ class InMemoryStore:
                 removed += 1
         return removed
 
+    def persist_source(self, source_id: str) -> None:
+        """Сохранить текущее состояние источника в персистентное хранилище."""
+        source = self.sources.get(source_id)
+        if source:
+            _global_db.upsert_source(source.model_dump())
 
     def get_parsing_settings(self, notebook_id: str) -> ParsingSettings:
         return self.parsing_settings.setdefault(notebook_id, ParsingSettings())
 
     def update_parsing_settings(self, notebook_id: str, payload: ParsingSettings) -> ParsingSettings:
         self.parsing_settings[notebook_id] = payload
+        _global_db.upsert_parsing_settings(
+            notebook_id,
+            payload.chunk_size,
+            payload.chunk_overlap,
+            payload.min_chunk_size,
+            payload.ocr_enabled,
+            payload.ocr_language,
+        )
         return payload
 
     def sync_source_enabled(self, source_id: str, enabled: bool) -> None:

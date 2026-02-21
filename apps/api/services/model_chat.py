@@ -29,6 +29,35 @@ def build_chat_history(messages: Iterable[ChatMessage], limit: int = DEFAULT_MOD
     return [{"role": item.role, "content": item.content} for item in window if item.content.strip()]
 
 
+def build_rag_context(chunks: list[dict]) -> str:
+    """Формирует строку контекста из retrieved-чанков для вставки в prompt."""
+    if not chunks:
+        return ""
+    parts: list[str] = []
+    for i, chunk in enumerate(chunks, start=1):
+        from pathlib import Path
+        src = Path(chunk.get("source", "")).name or "unknown"
+        page = chunk.get("page")
+        page_str = f" (стр. {page})" if isinstance(page, int) else ""
+        text = (chunk.get("text") or "").strip()
+        if text:
+            parts.append(f"[{i}] {src}{page_str}:\n{text}")
+    return "\n\n".join(parts)
+
+
+def inject_rag_context(history: list[dict[str, str]], rag_context: str) -> list[dict[str, str]]:
+    """Вставляет RAG-контекст как системное сообщение в начало истории."""
+    system_msg = {
+        "role": "system",
+        "content": (
+            "Используй следующие фрагменты документов как контекст для ответа на вопрос пользователя. "
+            "Опирайся только на предоставленные данные; если ответ не содержится в контексте — сообщи об этом.\n\n"
+            f"{rag_context}"
+        ),
+    }
+    return [system_msg] + history
+
+
 def _openai_headers(model: str) -> dict[str, str]:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if api_key:
@@ -43,6 +72,7 @@ async def generate_model_answer(
     base_url: str,
     model: str,
     history: list[dict[str, str]],
+    rag_context: str = "",
     timeout_s: float = 60.0,
 ) -> str:
     selected_provider = _normalize_provider(provider)
@@ -61,14 +91,15 @@ async def generate_model_answer(
     if not selected_model:
         return "Не выбрана модель. Выберите модель в Runtime Settings."
 
+    messages = inject_rag_context(history, rag_context) if rag_context else history
     payload = {
         "model": selected_model,
-        "messages": history,
+        "messages": messages,
         "stream": False,
     }
 
     if DEBUG_MODEL_MODE:
-        logger.info("generate_model_answer provider=%s endpoint=%s model=%s history=%s", selected_provider, endpoint, selected_model, history)
+        logger.info("generate_model_answer provider=%s endpoint=%s model=%s rag_context_len=%s", selected_provider, endpoint, selected_model, len(rag_context))
 
     try:
         request_url = f"{endpoint}/api/chat" if selected_provider == "ollama" else f"{endpoint}/v1/chat/completions"
@@ -114,6 +145,7 @@ async def stream_model_answer(
     base_url: str,
     model: str,
     history: list[dict[str, str]],
+    rag_context: str = "",
     timeout_s: float = 60.0,
 ):
     selected_provider = _normalize_provider(provider)
@@ -133,17 +165,19 @@ async def stream_model_answer(
         yield "Не выбрана модель. Выберите модель в Runtime Settings."
         return
 
+    messages = inject_rag_context(history, rag_context) if rag_context else history
+
     if selected_provider == "ollama":
         request_url = f"{endpoint}/api/chat"
-        payload = {"model": selected_model, "messages": history, "stream": True}
+        payload = {"model": selected_model, "messages": messages, "stream": True}
         headers = None
     else:
         request_url = f"{endpoint}/v1/chat/completions"
-        payload = {"model": selected_model, "messages": history, "stream": True}
+        payload = {"model": selected_model, "messages": messages, "stream": True}
         headers = _openai_headers(selected_model)
 
     if DEBUG_MODEL_MODE:
-        logger.info("stream_model_answer provider=%s url=%s model=%s history=%s", selected_provider, request_url, selected_model, history)
+        logger.info("stream_model_answer provider=%s url=%s model=%s rag_context_len=%s", selected_provider, request_url, selected_model, len(rag_context))
 
     received_packets = 0
     dropped_packets = 0

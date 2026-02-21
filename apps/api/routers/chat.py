@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 
 from ..schemas import ChatRequest, ChatResponse, Citation, CitationLocation
 from ..services.chat_modes import CHAT_MODES_BY_CODE, build_answer, normalize_chat_mode
-from ..services.model_chat import build_chat_history, generate_model_answer, stream_model_answer
+from ..services.model_chat import build_chat_history, build_rag_context, generate_model_answer, stream_model_answer
 from ..services.search_service import chunk_to_citation_fields, search
 from ..store import store
 
@@ -52,20 +52,24 @@ async def chat(payload: ChatRequest) -> ChatResponse:
     mode = normalize_chat_mode(payload.mode)
     store.add_message(payload.notebook_id, "user", payload.message)
 
+    # В model-режиме тоже выполняем retrieval для RAG-контекста
+    do_retrieval = CHAT_MODES_BY_CODE[mode].uses_retrieval or mode == "model"
     chunks = (
         search(payload.notebook_id, payload.message, payload.selected_source_ids, top_n=5)
-        if CHAT_MODES_BY_CODE[mode].uses_retrieval
+        if do_retrieval
         else []
     )
     citations = [_to_citation(payload.notebook_id, item) for item in chunks]
 
     if mode == "model":
         history = build_chat_history(store.messages.get(payload.notebook_id, []))
+        rag_context = build_rag_context(chunks)
         response_text = await generate_model_answer(
             provider=payload.provider,
             base_url=payload.base_url,
             model=payload.model,
             history=history,
+            rag_context=rag_context,
         )
     else:
         response_text = build_answer(mode, payload.message, citations)
@@ -103,15 +107,18 @@ async def chat_stream(
         stream_version = store.get_chat_version(notebook_id)
         sent_packets = 0
         sent_chars = 0
+        # В model-режиме тоже выполняем retrieval для RAG-контекста
+        do_retrieval = CHAT_MODES_BY_CODE[normalized_mode].uses_retrieval or normalized_mode == "model"
         chunks = (
             search(notebook_id, message, selected_ids, top_n=5)
-            if CHAT_MODES_BY_CODE[normalized_mode].uses_retrieval
+            if do_retrieval
             else []
         )
         citations = [_to_citation(notebook_id, item) for item in chunks]
 
         if normalized_mode == "model":
             history = build_chat_history(store.messages.get(notebook_id, []), limit=max_history)
+            rag_context = build_rag_context(chunks)
             assembled = []
             try:
                 async for token in stream_model_answer(
@@ -119,6 +126,7 @@ async def chat_stream(
                     base_url=base_url,
                     model=model,
                     history=history,
+                    rag_context=rag_context,
                 ):
                     assembled.append(token)
                     sent_packets += 1
@@ -133,7 +141,7 @@ async def chat_stream(
                 yield to_sse("done", {"message_id": ""})
                 return
 
-            yield to_sse("citations", [])
+            yield to_sse("citations", [citation.model_dump() for citation in citations])
 
             if store.get_chat_version(notebook_id) != stream_version:
                 yield to_sse("done", {"message_id": ""})
@@ -144,7 +152,7 @@ async def chat_stream(
                 "LLM stream completed",
                 extra={
                     "event": "chat.stream.completed",
-                    "details": f"mode=model; packets_sent={sent_packets}; chars_sent={sent_chars}; citations=0",
+                    "details": f"mode=model; packets_sent={sent_packets}; chars_sent={sent_chars}; citations={len(citations)}",
                 },
             )
             yield to_sse("done", {"message_id": assistant.id})

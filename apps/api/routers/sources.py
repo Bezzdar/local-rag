@@ -158,6 +158,7 @@ def update_source(source_id: str, payload: UpdateSourceRequest) -> Source:
             "ocr_enabled": payload.individual_config.get("ocr_enabled"),
             "ocr_language": payload.individual_config.get("ocr_language"),
         }
+    store.persist_source(source_id)
     return source
 
 
