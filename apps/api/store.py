@@ -4,21 +4,19 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import threading
 from pathlib import Path
 from uuid import uuid4
 
-from .config import BASE_DIR, CHUNKS_DIR, DOCS_DIR, NOTEBOOKS_DB_DIR
+from .config import CHUNKS_DIR, DOCS_DIR, NOTEBOOKS_DB_DIR, EMBEDDING_BASE_URL, EMBEDDING_DIM, EMBEDDING_ENABLED, EMBEDDING_ENDPOINT, EMBEDDING_PROVIDER
 from .schemas import ChatMessage, Note, Notebook, ParsingSettings, Source, now_iso
 from .services.index_service import clear_notebook_blocks, index_source, remove_source_blocks
 from .services.embedding_service import EmbeddingConfig, EmbeddingEngine, EmbeddingProviderConfig
 from .services.notebook_db import db_for_notebook
 
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
-BASE_DIR.mkdir(parents=True, exist_ok=True)
 CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
 NOTEBOOKS_DB_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -41,17 +39,16 @@ class InMemoryStore:
 
     def _get_embedding_engine(self) -> EmbeddingEngine:
         if self._embedding_engine is None:
-            enabled = os.getenv("EMBEDDING_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
             self._embedding_engine = EmbeddingEngine(
                 EmbeddingConfig(
-                    embedding_dim=int(os.getenv("EMBEDDING_DIM", "384")),
+                    embedding_dim=EMBEDDING_DIM,
                     provider=EmbeddingProviderConfig(
-                        base_url=os.getenv("EMBEDDING_BASE_URL", "http://localhost:11434"),
+                        base_url=EMBEDDING_BASE_URL,
                         model_name=os.getenv("EMBEDDING_MODEL", "nomic-embed-text"),
-                        provider=os.getenv("EMBEDDING_PROVIDER", "ollama"),
-                        endpoint=os.getenv("EMBEDDING_ENDPOINT") or None,
-                        enabled=enabled,
-                        fallback_dim=int(os.getenv("EMBEDDING_DIM", "384")),
+                        provider=EMBEDDING_PROVIDER,
+                        endpoint=EMBEDDING_ENDPOINT,
+                        enabled=EMBEDDING_ENABLED,
+                        fallback_dim=EMBEDDING_DIM,
                     )
                 )
             )
@@ -103,7 +100,6 @@ class InMemoryStore:
         self.chat_versions.setdefault(notebook.id, 0)
         self.parsing_settings.setdefault(notebook.id, ParsingSettings())
         (DOCS_DIR / notebook.id).mkdir(parents=True, exist_ok=True)
-        (CHUNKS_DIR / notebook.id).mkdir(parents=True, exist_ok=True)
         return notebook
 
     def update_notebook_title(self, notebook_id: str, title: str) -> Notebook | None:
@@ -158,7 +154,6 @@ class InMemoryStore:
             added_at=now_iso(),
             has_docs=file_path.exists(),
             has_parsing=indexed,
-            has_base=indexed,
         )
         self.sources[source.id] = source
         if indexed:
@@ -207,16 +202,8 @@ class InMemoryStore:
                 is_enabled=source.is_enabled,
             )
             notebook_db.close()
-            base_dir = BASE_DIR / source.notebook_id
-            base_dir.mkdir(parents=True, exist_ok=True)
-            base_file = base_dir / f"{source.id}.json"
-            base_file.write_text(
-                json.dumps([item.parsed_chunk for item in embedded_chunks], ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
             source.status = "indexed"
             source.has_parsing = True
-            source.has_base = True
             if vector_ready:
                 source.embeddings_status = "available"
                 source.index_warning = None
@@ -255,14 +242,11 @@ class InMemoryStore:
         remove_source_blocks(source.notebook_id, source_id)
         parsing_file = CHUNKS_DIR / source.notebook_id / f"{source.id}.json"
         parsing_file.unlink(missing_ok=True)
-        base_file = BASE_DIR / source.notebook_id / f"{source.id}.json"
-        base_file.unlink(missing_ok=True)
         notebook_db = db_for_notebook(source.notebook_id)
         notebook_db.conn.execute("DELETE FROM documents WHERE doc_id=?", (source.id,))
         notebook_db.conn.commit()
         notebook_db.close()
         source.has_parsing = False
-        source.has_base = False
         source.status = "new"
         return True
 

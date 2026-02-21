@@ -28,11 +28,11 @@ apps/web/out/
 *.log
 logs/
 
-# Local runtime data (generated indexes/chunks)
-data/index/
-data/chunks/
+# Local runtime data (generated docs/parsing/db/logs)
+data/
+*.db
 
-# Generated uploaded docs from local tests/smoke runs
+# Keep committed demo docs
 data/docs/**
 !data/docs/
 !data/docs/00000000-0000-0000-0000-000000000001/

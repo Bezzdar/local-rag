@@ -55,14 +55,14 @@
 - `GET /api/chat/stream` делает retrieval по индексированным блокам и возвращает citations с метаданными (`filename`, `page`, `section`).
 
 ### Упрощено
-- Legacy engine включается флагом `ENABLE_LEGACY_ENGINE=1` (по умолчанию off в этом окружении).
+- Legacy engine включается флагом `(removed)` (по умолчанию off в этом окружении).
 - Генерация финального текста ответа пока template-based.
 
 ## Data paths
 
 - docs: `data/docs/`
-- index: `data/index/`
-- chunks artifacts: `data/chunks/`
+- index: `data/notebooks/`
+- chunks artifacts: `data/parsing/`
 
 ---
 
@@ -112,7 +112,7 @@
 - `packages/rag_core/` — вынесенное legacy-ядро обработки:
   - `parsers/text_extraction.py` — извлечение текста, секционирование, семантическое chunking API.
   - `parsers/preprocessing.py`, `parsers/ner_extraction.py` — вспомогательная предобработка/NER.
-  - `app/engine.py` — pipeline индексации в Chroma.
+  - `app/engine.py` — pipeline индексации в SQLite.
   - `app/chunk_manager.py` — parent/child chunking, chunk storage helpers.
   - `app/search_tools.py` — TF-IDF + semantic rerank утилиты.
   - прочие модули (`search_engine.py`, `term_graph.py`, и т.д.) — расширения retrieval/аналитики.
@@ -120,8 +120,8 @@
 ### Данные и артефакты
 
 - `data/docs/<notebook_id>/` — физические загруженные файлы.
-- `data/index/` — persistent index storage (в т.ч. Chroma для legacy-контура).
-- `data/chunks/` — JSON-артефакты чанков.
+- `data/notebooks/` — persistent index storage (в т.ч. SQLite для legacy-контура).
+- `data/parsing/` — JSON-артефакты чанков.
 
 ---
 
@@ -182,7 +182,7 @@
 
 ## 3.3 Семантический чанкинг (`packages/rag_core/app/chunk_manager.py`)
 
-Для legacy-индексации в Chroma используется двухуровневое дробление:
+Для legacy-индексации в SQLite используется двухуровневое дробление:
 
 1. Внутри блока: `_split_technical_sections(...)` по техзаголовкам.
 2. Формируются **parent chunks** (крупные контекстные окна, `_PARENT_MAX_LEN`).
@@ -213,7 +213,7 @@
 - Simhash near-duplicate filtering при chunking.
 - Adaptive chunk sizing по средней длине предложения.
 - TextRank для выделения смысловых границ (при наличии sumy).
-- Индексация в Chroma с метаданными (`file_path`, `page_label`, `section_id`, `term_tags`, `parent_id`).
+- Индексация в SQLite с метаданными (`file_path`, `page_label`, `section_id`, `term_tags`, `parent_id`).
 
 ---
 
@@ -224,7 +224,7 @@
 - `apps/api/services/search_service.py` — retrieval + преобразование chunk -> citation fields.
 - `packages/rag_core/parsers/text_extraction.py` — «источник истины» по извлечению/нормализации/секции текста.
 - `packages/rag_core/app/chunk_manager.py` — управляет структурным семантическим чанкингом (parent/child).
-- `packages/rag_core/app/engine.py` — end-to-end legacy индексатор (extract -> chunk -> embed -> chroma).
+- `packages/rag_core/app/engine.py` — end-to-end legacy индексатор (extract -> chunk -> embed -> sqlite).
 - `apps/web/app/notebooks/[id]/page.tsx` — orchestration UI workflow (queries/mutations/SSE).
 - `apps/web/lib/api.ts`, `apps/web/lib/sse.ts` — transport слой frontend.
 
@@ -721,3 +721,16 @@ make smoke    # alias to verify
 
 ## Notebook testing note
 See `notebook.md` for environment limitations and E2E prerequisites for Notebook checks.
+
+
+## Windows Quickstart
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -c "import sqlite3; import sqlite_vec; con=sqlite3.connect(':memory:'); con.enable_load_extension(True); sqlite_vec.load(con); print('sqlite-vec loaded OK')"
+python -m pytest -q
+python -m uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
+```

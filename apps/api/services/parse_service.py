@@ -389,34 +389,8 @@ class DocumentParser:
                         }
                     )
 
-        # pdfplumber tables
-        try:
-            import pdfplumber
-
-            with pdfplumber.open(path) as pdf:
-                for page_idx, page in enumerate(pdf.pages, start=1):
-                    for table in page.extract_tables() or []:
-                        if not table:
-                            continue
-                        header = [str(col or "").strip() for col in table[0]]
-                        divider = ["---"] * len(header)
-                        lines = [f"| {' | '.join(header)} |", f"| {' | '.join(divider)} |"]
-                        for row in table[1:]:
-                            values = [str(col or "").strip() for col in row]
-                            lines.append(f"| {' | '.join(values)} |")
-                        blocks.append(
-                            {
-                                "text": "\n".join(lines),
-                                "chunk_type": ChunkType.TABLE,
-                                "page_number": page_idx,
-                                "section_header": section_header,
-                                "parent_header": None,
-                            }
-                        )
-        except Exception:
-            pass
-
         return blocks, total_pages
+
 
     def _preprocess_ocr_image(self, img, cv2):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)

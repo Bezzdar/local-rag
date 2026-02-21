@@ -7,9 +7,9 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from .config import DATA_DIR
+from .config import LOGS_DIR
 
-LOG_DIR = DATA_DIR / "logs"
+LOG_DIR = LOGS_DIR
 LOG_FILE = LOG_DIR / "app.log"
 
 

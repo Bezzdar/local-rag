@@ -8,7 +8,7 @@ import time
 from fastapi.testclient import TestClient
 
 from apps.api.main import app
-from apps.api.config import BASE_DIR
+from apps.api.config import CHUNKS_DIR
 
 client = TestClient(app)
 
@@ -47,8 +47,7 @@ def test_source_lifecycle_lamps() -> None:
     source_state = next(item for item in listed if item['id'] == source['id'])
     assert source_state['has_docs'] is True
     assert source_state['has_parsing'] is True
-    assert source_state['has_base'] is True
-    assert (BASE_DIR / notebook_id / f"{source['id']}.json").exists()
+    assert (CHUNKS_DIR / notebook_id / f"{source['id']}.json").exists()
 
     delete = client.delete(f"/api/sources/{source['id']}")
     assert delete.status_code == 204
@@ -56,14 +55,14 @@ def test_source_lifecycle_lamps() -> None:
     source_state = next(item for item in listed if item['id'] == source['id'])
     assert source_state['has_docs'] is False
     assert source_state['has_parsing'] is True
+    assert (CHUNKS_DIR / notebook_id / f"{source['id']}.json").exists()
 
     erase = client.delete(f"/api/sources/{source['id']}/erase")
     assert erase.status_code == 204
     listed = client.get(f'/api/notebooks/{notebook_id}/sources').json()
     source_state = next(item for item in listed if item['id'] == source['id'])
     assert source_state['has_parsing'] is False
-    assert source_state['has_base'] is False
-    assert not (BASE_DIR / notebook_id / f"{source['id']}.json").exists()
+    assert not (CHUNKS_DIR / notebook_id / f"{source['id']}.json").exists()
 
 
 def test_parsing_settings_endpoints() -> None:

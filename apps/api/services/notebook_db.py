@@ -5,6 +5,11 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+
+try:
+    import sqlite_vec
+except Exception:  # noqa: BLE001
+    sqlite_vec = None
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +35,10 @@ class NotebookDB:
         self.conn.execute("PRAGMA synchronous=NORMAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.execute("PRAGMA cache_size=-64000")
+        if sqlite_vec is not None and hasattr(self.conn, "enable_load_extension"):
+            self.conn.enable_load_extension(True)
+            sqlite_vec.load(self.conn)
+            self.conn.enable_load_extension(False)
 
     def _migrate(self) -> None:
         self.conn.executescript(

@@ -11,7 +11,7 @@
 | `apps/api/routers/sources.py` | Эндпоинты загрузки/удаления источников, запуска/контроля индексации и статусов источников. |
 | `apps/api/store.py` | Центральная in-memory оркестрация notebooks/sources/messages/notes и вызовов индексации. |
 | `apps/api/schemas.py` | Pydantic-контракты для запросов/ответов, используемых в upload/index/chat-контурах. |
-| `apps/api/config.py` | Пути к `data/docs`, `data/chunks`, `data/index` и другие backend-настройки, влияющие на pipeline. |
+| `apps/api/config.py` | Пути к `data/docs`, `data/parsing`, `data/notebooks` и другие backend-настройки, влияющие на pipeline. |
 
 ## 2) Парсинг и подготовка текстовых блоков
 
@@ -85,7 +85,7 @@
 |---|---|
 | `apps/api/services/index_service.py` | `index_source` (основной индексатор source), `get_notebook_blocks`, `remove_source_blocks`, `clear_notebook_blocks`. |
 | `apps/api/services/embedding_service.py` | `EmbeddingEngine` (построение векторных представлений/поиск), `EmbeddingClient`, `EmbeddedChunk`, `IndexMeta`, `SearchResult`, `_normalize`, `_matches_filters`, `_embedded_to_dict`. |
-| `packages/rag_core/app/chunk_manager.py` | `semantic_chunking` (разбиение блоков в чанки), `_split_technical_sections`, `_chunk_text_with_overlap`, `get_chroma_collection`, `ChunkStore`, `save_chunks_for_folder`, `add_chunk_to_folder`, `update_chunk_by_number`, `delete_chunk_by_number`. |
+| `packages/rag_core/app/chunk_manager.py` | `semantic_chunking` (разбиение блоков в чанки), `_split_technical_sections`, `_chunk_text_with_overlap`, `get_sqlite_collection`, `ChunkStore`, `save_chunks_for_folder`, `add_chunk_to_folder`, `update_chunk_by_number`, `delete_chunk_by_number`. |
 | `packages/rag_core/app/chunk_editor.py` | Вспомогательные функции редактирования/пересохранения chunk-коллекций и метаданных. |
 | `packages/rag_core/app/engine.py` | `trigger_indexing` (extract→chunk→embed→save), `_get_embed_model`, `check_indexed_files`, `rebuild_index_from_folders`, `delete_index`. |
 
