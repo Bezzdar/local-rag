@@ -4,6 +4,7 @@ import ConnectionIndicator from '@/components/ConnectionIndicator';
 import ParsingSettingsPanel from '@/components/ParsingSettingsPanel';
 import RuntimeSettings from '@/components/RuntimeSettings';
 import { api } from '@/lib/api';
+import { logClientEvent } from '@/lib/clientLogger';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -38,12 +39,14 @@ export default function NotebooksPage() {
   });
 
   function openDialog() {
+    logClientEvent({ event: 'ui.notebook.create_dialog_open' });
     setNewNotebookName('');
     setIsDialogOpen(true);
   }
 
   function handleCreate() {
     const title = newNotebookName.trim() || `Ноутбук ${new Date().toLocaleTimeString()}`;
+    logClientEvent({ event: 'ui.notebook.created', metadata: { title } });
     createNotebook.mutate(title);
     setIsDialogOpen(false);
   }
@@ -53,6 +56,7 @@ export default function NotebooksPage() {
   }
 
   function openRenameDialog(notebookId: string, currentTitle: string) {
+    logClientEvent({ event: 'ui.notebook.rename_dialog_open', notebookId });
     setRenamingNotebookId(notebookId);
     setRenameNotebookName(currentTitle);
     setIsRenameDialogOpen(true);
@@ -62,6 +66,7 @@ export default function NotebooksPage() {
     if (!renamingNotebookId) return;
     const title = renameNotebookName.trim();
     if (!title) return;
+    logClientEvent({ event: 'ui.notebook.renamed', notebookId: renamingNotebookId, metadata: { title } });
     renameNotebook.mutate({ id: renamingNotebookId, title });
     setIsRenameDialogOpen(false);
     setRenamingNotebookId(null);
@@ -108,7 +113,11 @@ export default function NotebooksPage() {
                 onClick={() => setSelectedNotebookId(notebook.id)}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <Link href={`/notebooks/${notebook.id}`} className="block flex-1 hover:text-slate-700">
+                  <Link
+                    href={`/notebooks/${notebook.id}`}
+                    className="block flex-1 hover:text-slate-700"
+                    onClick={() => logClientEvent({ event: 'ui.notebook.opened', notebookId: notebook.id })}
+                  >
                     <div className="font-medium">{notebook.title}</div>
                     <div className="text-xs text-slate-500">{new Date(notebook.updated_at).toLocaleString()}</div>
                   </Link>
@@ -124,7 +133,7 @@ export default function NotebooksPage() {
                     <button
                       type="button"
                       className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      onClick={(e) => { e.stopPropagation(); duplicateNotebook.mutate(notebook.id); }}
+                      onClick={(e) => { e.stopPropagation(); logClientEvent({ event: 'ui.notebook.duplicated', notebookId: notebook.id }); duplicateNotebook.mutate(notebook.id); }}
                       disabled={duplicateNotebook.isPending}
                     >
                       Дублировать
@@ -132,7 +141,7 @@ export default function NotebooksPage() {
                     <button
                       type="button"
                       className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      onClick={(e) => { e.stopPropagation(); deleteNotebook.mutate(notebook.id); }}
+                      onClick={(e) => { e.stopPropagation(); logClientEvent({ event: 'ui.notebook.delete_requested', notebookId: notebook.id }); deleteNotebook.mutate(notebook.id); }}
                       disabled={deleteNotebook.isPending}
                     >
                       Удалить
@@ -149,7 +158,7 @@ export default function NotebooksPage() {
             <button
               type="button"
               className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
-              onClick={() => setIsSettingsOpen((current) => !current)}
+              onClick={() => { logClientEvent({ event: 'ui.settings_panel.toggle', metadata: { collapsed: isSettingsOpen } }); setIsSettingsOpen((current) => !current); }}
               aria-label={isSettingsOpen ? 'Свернуть панель настроек' : 'Развернуть панель настроек'}
             >
               {isSettingsOpen ? '→' : '←'}

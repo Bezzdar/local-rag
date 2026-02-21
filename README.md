@@ -17,17 +17,13 @@
   - [3) Детали chunking/parsing pipeline](#3-детали-chunkingparsing-pipeline)
   - [4) Какие алгоритмы используются](#4-какие-алгоритмы-используются)
   - [5) Роли ключевых файлов (быстрый справочник)](#5-роли-ключевых-файлов-быстрый-справочник)
-- [Установка и запуск на Windows (подробно)](#установка-и-запуск-на-windows-подробно)
-  - [1) Предварительные требования](#1-предварительные-требования)
-  - [2) Клонирование репозитория](#2-клонирование-репозитория)
-  - [3) Настройка backend (FastAPI)](#3-настройка-backend-fastapi)
-  - [4) Запуск backend API](#4-запуск-backend-api)
-  - [5) Настройка и запуск frontend (Next.js)](#5-настройка-и-запуск-frontend-nextjs)
-  - [6) Быстрая проверка после запуска](#6-быстрая-проверка-после-запуска)
-  - [7) Горячее обновление на Windows после правок в репозитории](#7-горячее-обновление-на-windows-после-правок-в-репозитории)
-  - [8) Типовые проблемы на Windows](#8-типовые-проблемы-на-windows)
-  - [9) Автоматизированный запуск с нуля (скрипты)](#9-автоматизированный-запуск-с-нуля-скрипты)
-  - [10) Скрипт горячего обновления из репозитория](#10-скрипт-горячего-обновления-из-репозитория)
+- [Установка и запуск на Windows](#установка-и-запуск-на-windows)
+  - [Предварительные требования](#предварительные-требования)
+  - [Быстрый запуск (launch.bat)](#быстрый-запуск-launchbat)
+  - [Полный ручной запуск (шаг за шагом)](#полный-ручной-запуск-шаг-за-шагом)
+  - [Горячее обновление (вручную)](#горячее-обновление-вручную)
+  - [Типовые проблемы на Windows](#типовые-проблемы-на-windows)
+- [Логирование](#логирование)
 - [Quick Start (API)](#quick-start-api)
 - [Quick Start (Web)](#quick-start-web)
 - [Manual testing checklist](#manual-testing-checklist)
@@ -230,294 +226,249 @@
 
 ---
 
-## Установка и запуск на Windows (подробно)
+## Установка и запуск на Windows
 
-Ниже — развёрнутый сценарий для Windows 10/11 с отдельными командами для **PowerShell** и **cmd.exe**.
-
-### 1) Предварительные требования
+### Предварительные требования
 
 - **Python 3.10+** (рекомендуется 3.11) с опцией `Add python.exe to PATH`.
 - **Node.js 20 LTS**.
 - **Git for Windows**.
 - **Microsoft Visual C++ Redistributable 2015-2022** (часто требуется для Python-пакетов).
 
-Проверка версий (PowerShell):
-
-```powershell
-python --version
-pip --version
-node --version
-npm --version
-git --version
-```
-
-Проверка версий (cmd.exe):
+Проверка версий:
 
 ```bat
-python --version
-pip --version
-node --version
-npm --version
-git --version
+python --version && node --version && npm --version && git --version
 ```
 
-### 2) Клонирование репозитория
+---
 
-PowerShell:
+### Быстрый запуск (launch.bat)
 
-```powershell
+В корне репозитория находится файл `launch.bat` — интерактивный CLI-лаунчер.
+Запустите его двойным кликом или из командной строки:
+
+```bat
+launch.bat
+```
+
+Откроется текстовое меню:
+
+```
+╔════════════════════════════════════════════╗
+║       Local RAG Assistant — Launcher       ║
+╚════════════════════════════════════════════╝
+
+  1.  Обновление с GitHub
+  2.  Запустить программу
+  3.  Откат настроек до базовых
+  4.  Логи
+  0.  Выход
+```
+
+**Описание пунктов меню:**
+
+| Пункт | Действие |
+|-------|----------|
+| **1. Обновление** | `git pull --rebase` + `pip install` + `npm install` + очистка `.next` |
+| **2. Запуск** | Создаёт venv (если нет), запускает API и Web сервер |
+| **3. Откат** | Удаляет `data/docs`, `data/notebooks`, `data/parsing`; сбрасывает `apps/web/.env.local` |
+| **4. Логи** | Подменю управления окнами логов |
+| **0. Выход** | Закрывает лаунчер |
+
+**Подменю «Логи»:**
+
+```
+  A.  Серверный лог  (app_*.log)   [ОТКРЫТ/ЗАКРЫТ]
+  B.  UI-события     (ui_*.log)    [ОТКРЫТ/ЗАКРЫТ]
+  C.  Открыть папку с логами
+  R.  Режим запуска процессов:     [visible/hidden]
+  0.  Назад
+```
+
+- **A / B** — открывают или закрывают отдельное окно CMD с `tail -f` соответствующего лог-файла.
+- **C** — открывает папку `data/logs/sessions` в Проводнике.
+- **R** — переключает режим запуска процессов:
+  - `visible` — API и Web запускаются в отдельных видимых окнах PowerShell.
+  - `hidden` — процессы работают в фоне без видимых окон (логи доступны через пункты A/B).
+
+> Режим сохраняется в `%TEMP%\rag_launcher\window_mode.txt` и применяется при следующем нажатии «2. Запустить».
+
+---
+
+### Полный ручной запуск (шаг за шагом)
+
+Этот сценарий предназначен для понимания того, что происходит «под капотом», отладки или первого запуска без bat-файла.
+
+#### Шаг 1 — Клонирование репозитория
+
+```bat
 git clone <URL_ВАШЕГО_РЕПО>
 cd RAG
 ```
+
+#### Шаг 2 — Создание виртуального окружения Python
+
+```bat
+python -m venv .venv
+```
+
+#### Шаг 3 — Установка зависимостей backend
 
 cmd.exe:
 
 ```bat
-git clone <URL_ВАШЕГО_РЕПО>
-cd RAG
+.venv\Scripts\activate.bat
+python -m pip install --upgrade pip
+pip install -r apps\api\requirements.txt
 ```
 
-### 3) Настройка backend (FastAPI)
-
-PowerShell:
+PowerShell (если выдаёт ошибку активации — сначала выполните `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`):
 
 ```powershell
-python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r apps/api/requirements.txt
 ```
 
-Если активация скриптов запрещена:
+#### Шаг 4 — Подготовка frontend
 
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-```
-
-cmd.exe:
+Во втором терминале (из корня репозитория):
 
 ```bat
-python -m venv .venv
-.venv\Scripts\activate.bat
-python -m pip install --upgrade pip
-pip install -r apps/api/requirements.txt
-```
-
-### 4) Запуск backend API
-
-Запускайте из корня репозитория с активированным виртуальным окружением.
-
-PowerShell:
-
-```powershell
-uvicorn apps.api.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-cmd.exe:
-
-```bat
-uvicorn apps.api.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-Проверка API:
-
-- Swagger UI: http://127.0.0.1:8000/docs
-- Health endpoint: http://127.0.0.1:8000/api/health
-
-### 5) Настройка и запуск frontend (Next.js)
-
-Откройте **второй** терминал в корне репозитория.
-
-PowerShell:
-
-```powershell
-cd apps/web
-npm install
-Copy-Item ..\..\.env.example .env.local
-npm run dev
-```
-
-cmd.exe:
-
-```bat
+copy .env.example apps\web\.env.local
 cd apps\web
 npm install
-copy ..\..\.env.example .env.local
+```
+
+#### Шаг 5 — Запуск backend API
+
+В первом терминале (с активированным venv):
+
+```bat
+uvicorn apps.api.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Проверка:
+
+- Swagger UI: <http://127.0.0.1:8000/docs>
+- Health: <http://127.0.0.1:8000/api/health>
+
+#### Шаг 6 — Запуск frontend
+
+Во втором терминале (в папке `apps/web`):
+
+```bat
 npm run dev
 ```
 
-После запуска frontend обычно доступен на http://localhost:3000.
+После запуска frontend доступен по адресу <http://localhost:3000>.
 
-### 6) Быстрая проверка после запуска
+#### Шаг 7 — Быстрая проверка
 
-1. Откройте web-интерфейс.
-2. Создайте или выберите notebook.
+1. Откройте <http://localhost:3000>.
+2. Создайте ноутбук.
 3. Загрузите PDF/DOCX/XLSX.
 4. Дождитесь статуса `indexed`.
-5. Отправьте вопрос в чат и проверьте citations справа.
+5. Задайте вопрос и проверьте citations справа.
 
-### 7) Горячее обновление на Windows после правок в репозитории
+---
 
-Сценарий нужен, когда вы изменили код локально (или подтянули изменения через `git pull`) и хотите применить их без «чистой» переустановки с нуля.
+### Горячее обновление (вручную)
 
-#### Когда что обновлять
-
-- Менялся только backend (`apps/api`, `packages/rag_core`) → обновить Python-зависимости и перезапустить API.
-- Менялся только frontend (`apps/web`) → обновить npm-зависимости и перезапустить web.
-- Менялись обе части или lock-файлы (`requirements.txt`, `package-lock.json`) → выполнить оба блока.
-
-#### PowerShell
-
-```powershell
-# 1) Забрать последние изменения
-git pull
-
-# 2) Backend: активировать venv и обновить зависимости
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r apps/api/requirements.txt
-
-# 3) Frontend: обновить зависимости
-cd apps/web
-npm install
-cd ../..
-```
-
-Далее перезапустите процессы разработки:
-
-- если `uvicorn --reload` и `npm run dev` уже запущены, чаще всего достаточно остановить и запустить их заново;
-- для backend можно также удалить кэш при нестабильном состоянии:
-
-```powershell
-Get-ChildItem -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
-```
-
-#### cmd.exe
+Когда изменения уже скачаны (`git pull`) и нужно обновить зависимости без переустановки с нуля.
 
 ```bat
-REM 1) Забрать последние изменения
-git pull
+REM 1) Забрать изменения
+git pull --rebase
 
-REM 2) Backend: активировать venv и обновить зависимости
+REM 2) Backend
 .venv\Scripts\activate.bat
-python -m pip install --upgrade pip
-pip install -r apps/api/requirements.txt
+python -m pip install -r apps\api\requirements.txt
 
-REM 3) Frontend: обновить зависимости
+REM 3) Frontend
 cd apps\web
 npm install
+rmdir /s /q .next
 cd ..\..
 ```
 
-Если после обновления проявляются странные ошибки сборки frontend, очистите кеш Next.js:
+Затем перезапустите API и Web (остановите и запустите заново).
 
-```bat
-rmdir /s /q apps\web\.next
+---
+
+### Типовые проблемы на Windows
+
+- **`python` не найден** — переустановите Python с опцией `Add to PATH`.
+- **Ошибка активации `.venv` в PowerShell** — выполните `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`.
+- **`npm install` даёт 403/timeout** — пропишите корпоративный registry: `npm config set registry https://<registry>/`
+- **`pip install` блокируется proxy** — используйте `PIP_INDEX_URL=https://<pypi>/simple`.
+- **`next-swc.win32-x64-msvc.node is not a valid Win32 application`** — убедитесь в 64-битном Node.js (`node -p "process.arch"` → должно быть `x64`). При необходимости переустановите node_modules:
+  ```powershell
+  cd apps/web
+  Remove-Item -Recurse -Force node_modules, package-lock.json
+  npm install
+  ```
+
+---
+
+## Логирование
+
+### Структура лог-файлов
+
+Логи создаются при каждом запуске backend и хранятся в `data/logs/sessions/`.
+
+Каждая сессия (= один запуск uvicorn) создаёт **два файла**:
+
+| Файл | Содержимое |
+|------|-----------|
+| `app_YYYY-MM-DD_HH-MM.log` | Серверные события: HTTP-запросы/ответы, индексация, ошибки |
+| `ui_YYYY-MM-DD_HH-MM.log` | UI-события: нажатия кнопок, действия пользователя |
+
+Пример:
+
+```
+data/logs/sessions/
+  app_2025-01-15_09-30.log
+  ui_2025-01-15_09-30.log
+  app_2025-01-15_13-30.log   ← ротация через 4 часа
+  ui_2025-01-15_13-30.log
 ```
 
-И запустите сервисы снова:
+### Ротация
 
-```bat
-uvicorn apps.api.main:app --host 127.0.0.1 --port 8000 --reload
-cd apps\web && npm run dev
-```
+При непрерывной работе файлы автоматически ротируются **каждые 4 часа** (хранится до 12 ротаций на сессию = 48 ч работы).
 
-### 8) Типовые проблемы на Windows
+### Что попадает в логи
 
-- **`python` не найден**
-  - Переустановите Python с опцией `Add to PATH`.
-- **Ошибка активации `.venv` в PowerShell**
-  - Используйте `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`.
-- **`npm install` даёт 403/timeout в корпоративной сети**
-  - Пропишите внутренний registry:
-    ```powershell
-    npm config set registry https://<your-corp-npm-registry>/
-    ```
-- **`pip install` блокируется proxy/403**
-  - Используйте корпоративный PyPI (`PIP_INDEX_URL`) или офлайн-колёса (см. раздел ниже).
-- **`Failed to load SWC binary for win32/x64` или `next-swc.win32-x64-msvc.node is not a valid Win32 application`**
-  - Убедитесь, что установлен **64-битный Node.js** (не x86):
-    ```powershell
-    node -p "process.arch"
-    ```
-    Должно быть `x64`.
-  - Полностью переустановите frontend-зависимости:
-    ```powershell
-    cd apps/web
-    Remove-Item -Recurse -Force node_modules, package-lock.json
-    npm install
-    npm run dev
-    ```
-  - В проект добавлен fallback-пакет `@next/swc-wasm-nodejs`, поэтому даже при проблеме с native SWC dev-сервер сможет стартовать через WASM-реализацию.
+**Серверный лог (`app_*.log`)**:
+- Старт/стоп приложения
+- Каждый HTTP-запрос (метод, путь, статус, время выполнения, IP)
+- События индексации источников
+- Ошибки и исключения
 
+**UI-лог (`ui_*.log`)**:
+- Открытие/создание/удаление/переименование ноутбука
+- Загрузка и удаление документов
+- Отправка сообщения в чат, смена режима
+- Открытие конфигурации источника, сброс/переиндексация
+- Сворачивание/разворачивание панелей
+- Сохранение ответа в заметки
 
-### 9) Автоматизированный запуск с нуля (скрипты)
+### Просмотр логов
 
-В корне репозитория добавлены скрипты, которые поднимают проект «с нуля»: создают (или переиспользуют) `.venv`, обновляют зависимости backend/frontend, создают `apps/web/.env.local` (если отсутствует), затем открывают отдельные терминалы для API и WEB в правильной последовательности.
+Через `launch.bat → 4 (Логи)`:
+- **A** — открыть окно с tail серверного лога
+- **B** — открыть окно с tail UI-событий
+- **C** — открыть папку в Проводнике
 
-- PowerShell: `start_windows.ps1`
-- cmd.exe: `start_windows.cmd`
-
-PowerShell:
+Вручную (PowerShell):
 
 ```powershell
-./start_windows.ps1
+# Последний серверный лог
+$f = Get-ChildItem data\logs\sessions\app_*.log | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+Get-Content $f.FullName -Wait -Tail 50
 ```
-
-cmd.exe:
-
-```bat
-start_windows.cmd
-```
-
-Что делает скрипт:
-
-1. Проверяет/создаёт Python venv (`.venv`).
-2. Устанавливает зависимости backend из `apps/api/requirements.txt`.
-3. Устанавливает зависимости frontend (`npm install` в `apps/web`).
-4. Копирует `.env.example` -> `apps/web/.env.local` (если ещё не создан).
-5. Открывает терминал API с `uvicorn ... --reload`.
-6. Автоматически открывает отдельный терминал логов backend с `tail`/`Get-Content -Wait` для `data/logs/app.log`.
-7. Открывает терминал WEB с `npm run dev`.
-
-### 10) Скрипт горячего обновления из репозитория
-
-В корне репозитория добавлены скрипты для автоматического обновления локальной копии проекта из Git-репозитория с последующим обновлением зависимостей. Поддерживаются два режима:
-
-- **обычное обновление**: `git pull --rebase`;
-- **жёсткая синхронизация с удалённой веткой** (упрощённый «откат к GitHub»): `git reset --hard origin/<branch>` + `git clean -fd`.
-
-Скрипты:
-
-- PowerShell: `update_windows.ps1`
-- cmd.exe: `update_windows.cmd`
-
-Обычное обновление:
-
-```powershell
-./update_windows.ps1
-```
-
-```bat
-update_windows.cmd
-```
-
-Жёсткое обновление (удаляет локальные незакоммиченные изменения):
-
-```powershell
-./update_windows.ps1 -HardReset
-```
-
-```bat
-update_windows.cmd --hard-reset
-```
-
-После обновления скрипт:
-
-1. Обновляет backend-зависимости (`pip install -r apps/api/requirements.txt`).
-2. Обновляет frontend-зависимости (`npm install`).
-3. Очищает `apps/web/.next` для исключения stale-кэша сборки.
-4. Просит перезапустить терминалы API/WEB (если они уже были запущены).
 
 ---
 
@@ -723,14 +674,3 @@ make smoke    # alias to verify
 See `notebook.md` for environment limitations and E2E prerequisites for Notebook checks.
 
 
-## Windows Quickstart
-
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python -c "import sqlite3; import sqlite_vec; con=sqlite3.connect(':memory:'); con.enable_load_extension(True); sqlite_vec.load(con); print('sqlite-vec loaded OK')"
-python -m pytest -q
-python -m uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
-```
