@@ -137,8 +137,11 @@ class FakeHTTPClient:
         self.posts.append(url)
         if url.endswith('/api/embed'):
             return FakeResponse(404)
-        if url.endswith('/api/embeddings') or url.endswith('/embed'):
-            return FakeResponse(200, {'embeddings': [[1.0, 2.0, 3.0, 4.0] for _ in json['input']]})
+        if url.endswith('/api/embeddings'):
+            return FakeResponse(200, {'embedding': [1.0, 2.0, 3.0, 4.0]})
+        if url.endswith('/embed'):
+            inputs = json.get('input', [])
+            return FakeResponse(200, {'embeddings': [[1.0, 2.0, 3.0, 4.0] for _ in inputs]})
         return FakeResponse(404)
 
 
@@ -166,3 +169,25 @@ def test_base_url_api_suffix_is_not_duplicated(monkeypatch):
 
     client.get_embeddings(['hello'])
     assert all('/api/api/' not in url for url in client._client.posts)
+
+
+class FakeHTTPClientV1Only(FakeHTTPClient):
+    def post(self, url: str, json: dict) -> FakeResponse:
+        self.posts.append(url)
+        if url.endswith('/v1/embeddings'):
+            inputs = json.get('input', [])
+            return FakeResponse(200, {'data': [{'embedding': [1.0, 2.0, 3.0, 4.0]} for _ in inputs]})
+        return FakeResponse(404)
+
+
+def test_ollama_fallback_to_v1_embeddings(monkeypatch):
+    from apps.api.services import embedding_service
+
+    monkeypatch.setattr(embedding_service.httpx, 'Client', FakeHTTPClientV1Only)
+    client = embedding_service.EmbeddingClient(
+        EmbeddingProviderConfig(base_url='http://localhost:11434', model_name='dummy', provider='ollama')
+    )
+
+    vectors = client.get_embeddings(['hello'])
+    assert vectors[0] == [1.0, 2.0, 3.0, 4.0]
+    assert any(url.endswith('/v1/embeddings') for url in client._client.posts)
