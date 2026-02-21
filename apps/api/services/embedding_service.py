@@ -6,7 +6,6 @@ import json
 import logging
 import math
 import os
-import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -135,7 +134,10 @@ class EmbeddingClient:
         self._client = httpx.Client(timeout=provider.api_timeout)
         self._base_url = provider.base_url.rstrip("/")
         self._embedding_dim = max(1, int(provider.fallback_dim or 384))
-        self._active_embed_path = self._embedding_paths()[0]
+        self._active_embed_target = self._embedding_targets()[0]
+        self._model_candidates = self._build_model_candidates(provider.model_name)
+        self._active_model = self._model_candidates[0]
+        self._disabled_due_to_model_not_found = False
         self._available = False
         if not provider.enabled:
             return
@@ -163,41 +165,114 @@ class EmbeddingClient:
     def _zero(self) -> list[float]:
         return [0.0 for _ in range(self._embedding_dim)]
 
-    def _embedding_paths(self) -> list[str]:
+
+    def _build_model_candidates(self, model_name: str) -> list[str]:
+        raw = (model_name or '').strip()
+        if not raw:
+            return ['']
+        candidates = [raw]
+        base_name = raw.split(':', 1)[0].strip()
+        if base_name and base_name not in candidates:
+            candidates.append(base_name)
+        return candidates
+
+    def _model_exists_on_server(self, model_name: str) -> bool:
+        try:
+            response = self._client.get(f"{self._base_url}/api/tags")
+            if response.status_code >= 500:
+                return False
+            data = response.json() if hasattr(response, 'json') else {}
+            models = data.get('models', []) if isinstance(data, dict) else []
+            names = [item.get('name', '').strip() for item in models if isinstance(item, dict) and item.get('name')]
+            if not names:
+                return True
+            target = model_name.strip().lower()
+            return any(name.lower() == target for name in names)
+        except Exception:
+            return True
+
+    def _is_model_not_found_error(self, exc: Exception) -> bool:
+        message = str(exc).lower()
+        return '404' in message or 'not found' in message or 'model' in message and 'status=404' in message
+
+    def _embedding_targets(self) -> list[tuple[str, Literal["native", "openai", "legacy"]]]:
         if self._provider.endpoint:
             custom = self._provider.endpoint if self._provider.endpoint.startswith("/") else f"/{self._provider.endpoint}"
-            return [custom]
-        if self._base_url.endswith("/api"):
-            primary, fallback = "/embed", "/embeddings"
-        else:
-            primary, fallback = "/api/embed", "/api/embeddings"
+            return [(custom, "native")]
         if (self._provider.provider or "ollama").lower() == "openai":
-            return ["/v1/embeddings"]
-        return [primary, fallback]
+            return [("/v1/embeddings", "openai")]
+        if self._base_url.endswith("/api"):
+            return [("/embed", "native"), ("/embeddings", "legacy"), ("/v1/embeddings", "openai")]
+        else:
+            return [('/api/embed', 'native'), ('/api/embeddings', 'legacy'), ('/v1/embeddings', 'openai')]
+
+    def _parse_embeddings_response(self, response: httpx.Response, expected_size: int) -> list[list[float]]:
+        data = response.json()
+        if isinstance(data, dict):
+            embeddings = data.get("embeddings")
+            if isinstance(embeddings, list):
+                result = [item if isinstance(item, list) else self._zero() for item in embeddings]
+                return (result + [self._zero()] * expected_size)[:expected_size]
+            openai_items = data.get("data")
+            if isinstance(openai_items, list):
+                result = []
+                for item in openai_items:
+                    if isinstance(item, dict) and isinstance(item.get("embedding"), list):
+                        result.append(item["embedding"])
+                    else:
+                        result.append(self._zero())
+                return (result + [self._zero()] * expected_size)[:expected_size]
+            single = data.get("embedding")
+            if isinstance(single, list):
+                return [single]
+        return [self._zero() for _ in range(expected_size)]
+
+    def _request_embeddings(self, path: str, mode: Literal["native", "openai", "legacy"], texts: list[str]) -> list[list[float]]:
+        url = f"{self._base_url}{path}"
+        if mode == "legacy":
+            vectors: list[list[float]] = []
+            for text in texts:
+                response = self._client.post(url, json={"model": self._active_model, "prompt": text})
+                response.raise_for_status()
+                vectors.extend(self._parse_embeddings_response(response, 1))
+            return vectors
+        payload = {"model": self._active_model, "input": texts}
+        response = self._client.post(url, json=payload)
+        response.raise_for_status()
+        return self._parse_embeddings_response(response, len(texts))
 
     def get_embeddings(self, texts: list[str], use_retry: bool = True) -> list[list[float]]:
         if not self._provider.enabled:
             return [self._zero() for _ in texts]
-        payload = {"model": self._provider.model_name, "input": texts}
-        for attempt in range(3):
-            try:
-                url = f"{self._base_url}{self._active_embed_path}"
-                response = self._client.post(url, json=payload)
-                if response.status_code == 404 and use_retry:
-                    paths = self._embedding_paths()
-                    if len(paths) > 1 and self._active_embed_path == paths[0]:
-                        self._active_embed_path = paths[1]
-                        response = self._client.post(f"{self._base_url}{self._active_embed_path}", json=payload)
-                response.raise_for_status()
-                embeddings = response.json().get("embeddings") or []
-                embeddings = (embeddings + [self._zero()] * len(texts))[: len(texts)]
-                self._available = True
-                return [[float(x) for x in item] if isinstance(item, list) and item else self._zero() for item in embeddings]
-            except Exception:
-                if attempt == 2 or not use_retry:
-                    self._available = False
-                    return [self._zero() for _ in texts]
-                time.sleep(2**attempt)
+        if self._disabled_due_to_model_not_found:
+            return [self._zero() for _ in texts]
+
+        last_error: Exception | None = None
+        model_candidates = [self._active_model] + [item for item in self._model_candidates if item != self._active_model]
+
+        for model_name in model_candidates:
+            if not model_name:
+                continue
+            if use_retry and not self._model_exists_on_server(model_name):
+                continue
+
+            self._active_model = model_name
+            targets = [self._active_embed_target] + [item for item in self._embedding_targets() if item != self._active_embed_target]
+            for candidate in targets:
+                try:
+                    embeddings = self._request_embeddings(candidate[0], candidate[1], texts)
+                    self._active_embed_target = candidate
+                    self._available = True
+                    return [[float(x) for x in item] if isinstance(item, list) and item else self._zero() for item in embeddings]
+                except Exception as exc:  # noqa: BLE001
+                    last_error = exc
+                    continue
+
+        if last_error and self._is_model_not_found_error(last_error):
+            self._disabled_due_to_model_not_found = True
+            logger.warning('Embedding model not found on Ollama server: %s', self._provider.model_name)
+
+        self._available = False
         return [self._zero() for _ in texts]
 
 
