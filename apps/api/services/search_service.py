@@ -12,20 +12,35 @@ from ..config import EMBEDDING_BASE_URL, EMBEDDING_DIM, EMBEDDING_ENABLED, EMBED
 from .notebook_db import db_for_notebook
 
 _ENGINE: EmbeddingEngine | None = None
+_OVERRIDE_PROVIDER: str | None = None
+_OVERRIDE_BASE_URL: str | None = None
+_OVERRIDE_MODEL: str | None = None
 
 
 # --- Основные блоки ---
+def reconfigure_engine(provider: str, base_url: str, model_name: str) -> None:
+    """Сбросить движок и применить новые настройки эмбеддинга."""
+    global _ENGINE, _OVERRIDE_PROVIDER, _OVERRIDE_BASE_URL, _OVERRIDE_MODEL
+    _OVERRIDE_PROVIDER = provider
+    _OVERRIDE_BASE_URL = base_url
+    _OVERRIDE_MODEL = model_name
+    _ENGINE = None
+
+
 def _engine() -> EmbeddingEngine | None:
     global _ENGINE
     if _ENGINE is None:
         try:
+            provider = _OVERRIDE_PROVIDER or EMBEDDING_PROVIDER
+            base_url = _OVERRIDE_BASE_URL or EMBEDDING_BASE_URL
+            model_name = _OVERRIDE_MODEL or os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
             _ENGINE = EmbeddingEngine(
                 EmbeddingConfig(
                     embedding_dim=EMBEDDING_DIM,
                     provider=EmbeddingProviderConfig(
-                        base_url=EMBEDDING_BASE_URL,
-                        model_name=os.getenv("EMBEDDING_MODEL", "nomic-embed-text"),
-                        provider=EMBEDDING_PROVIDER,
+                        base_url=base_url,
+                        model_name=model_name,
+                        provider=provider,
                         endpoint=EMBEDDING_ENDPOINT,
                         enabled=EMBEDDING_ENABLED,
                         fallback_dim=EMBEDDING_DIM,
