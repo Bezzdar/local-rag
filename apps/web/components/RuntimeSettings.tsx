@@ -321,7 +321,7 @@ export default function RuntimeSettings() {
                 <button type="button" className="rounded border px-2 py-1 text-slate-900" onClick={connect}>
                   Подключить
                 </button>
-                <button type="button" className="rounded border px-2 py-1 text-slate-900" onClick={saveDraft}>
+                <button type="button" className="rounded border px-2 py-1 text-slate-900" onClick={() => saveDraft()}>
                   Сохранить
                 </button>
                 <button type="button" className="rounded border border-red-200 px-2 py-1 text-red-600" onClick={disconnect}>
