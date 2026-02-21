@@ -36,6 +36,14 @@ def update_notebook(notebook_id: str, payload: UpdateNotebookRequest) -> Noteboo
     return notebook
 
 
+@router.post("/notebooks/{notebook_id}/duplicate", response_model=Notebook)
+def duplicate_notebook(notebook_id: str) -> Notebook:
+    notebook = store.duplicate_notebook(notebook_id)
+    if not notebook:
+        raise HTTPException(status_code=404, detail="Notebook not found")
+    return notebook
+
+
 @router.delete("/notebooks/{notebook_id}", status_code=204)
 def delete_notebook(notebook_id: str) -> None:
     if not store.delete_notebook(notebook_id):
