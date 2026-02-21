@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ChatMessageSchema, CitationSchema, NoteSchema, NotebookSchema, SourceSchema } from '@/types/dto';
+import { ChatMessageSchema, CitationSchema, NoteSchema, NotebookSchema, ParsingSettingsSchema, SourceSchema } from '@/types/dto';
 
 const apiBase = (process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000').replace(/\/+$/, '');
 
@@ -30,16 +30,16 @@ export const api = {
     request(
       `/api/notebooks/${notebookId}/parsing-settings`,
       { method: 'GET' },
-      z.object({ chunk_size: z.number(), chunk_overlap: z.number(), min_chunk_size: z.number(), ocr_enabled: z.boolean(), ocr_language: z.string() }),
+      ParsingSettingsSchema,
     ),
   updateParsingSettings: (
     notebookId: string,
-    payload: { chunk_size: number; chunk_overlap: number; min_chunk_size: number; ocr_enabled: boolean; ocr_language: string },
+    payload: { chunk_size: number; chunk_overlap: number; min_chunk_size: number; ocr_enabled: boolean; ocr_language: string; auto_parse_on_upload: boolean },
   ) =>
     request(
       `/api/notebooks/${notebookId}/parsing-settings`,
       { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) },
-      z.object({ chunk_size: z.number(), chunk_overlap: z.number(), min_chunk_size: z.number(), ocr_enabled: z.boolean(), ocr_language: z.string() }),
+      ParsingSettingsSchema,
     ),
   deleteSource: async (sourceId: string) => {
     const response = await fetch(`${apiBase}/api/sources/${sourceId}`, { method: 'DELETE' });

@@ -13,13 +13,15 @@ type Props = {
   onToggleSource: (sourceId: string) => void;
   onSelectAllSources: () => void;
   onClearSourceSelection: () => void;
-  onDeleteAllSources: () => void;
+  onDeleteSelectedSources: () => void;
   onDeleteUnselectedSources: () => void;
+  onParseAllSources: () => void;
+  onParseSelectedSources: () => void;
   onUpload: (file: File) => void;
-  onToggleEnabled: (source: Source, enabled: boolean) => void;
   onEraseSource: (source: Source) => void;
   onOpenConfig: (source: Source) => void;
   onDeleteSource: (source: Source) => void;
+  onParseSource: (source: Source) => void;
 };
 
 function Lamp({ label, active }: { label: string; active: boolean }) {
@@ -80,6 +82,7 @@ export default function SourcesPanel(props: Props) {
       </div>
 
       <div className="space-y-2">
+        {/* Row 1: Select / Deselect */}
         <div className="grid grid-cols-2 gap-2">
           <button type="button" className="rounded border border-slate-300 px-2 py-1 text-xs" onClick={props.onSelectAllSources}>
             Выделить все
@@ -87,12 +90,34 @@ export default function SourcesPanel(props: Props) {
           <button type="button" className="rounded border border-slate-300 px-2 py-1 text-xs" onClick={props.onClearSourceSelection}>
             Снять выделение
           </button>
+        </div>
+
+        {/* Row 2: Parse buttons */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            className="rounded border border-blue-200 px-2 py-1 text-xs text-blue-700"
+            onClick={props.onParseAllSources}
+          >
+            Парсить все
+          </button>
+          <button
+            type="button"
+            className="rounded border border-blue-200 px-2 py-1 text-xs text-blue-700"
+            onClick={props.onParseSelectedSources}
+          >
+            Парсить выбранное
+          </button>
+        </div>
+
+        {/* Row 3: Delete buttons */}
+        <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
             className="rounded border border-red-200 px-2 py-1 text-xs text-red-600"
-            onClick={props.onDeleteAllSources}
+            onClick={props.onDeleteSelectedSources}
           >
-            Удалить все
+            Удалить выбранное
           </button>
           <button
             type="button"
@@ -122,19 +147,24 @@ export default function SourcesPanel(props: Props) {
                 <Lamp label="p" active={source.has_parsing ?? false} />
                 <Lamp label="b" active={source.has_base ?? false} />
               </div>
-              <input
-                type="checkbox"
-                checked={source.is_enabled ?? true}
-                onChange={(e) => props.onToggleEnabled(source, e.target.checked)}
-                title="Включить/выключить документ"
-              />
+              {/* Play button: manually start parsing */}
+              <button
+                type="button"
+                className="rounded border border-green-300 px-2 text-xs text-green-700"
+                onClick={() => props.onParseSource(source)}
+                title="Запустить парсинг документа"
+              >
+                ▶
+              </button>
               <div className="flex gap-1">
                 <button type="button" className="rounded border px-2 text-xs" onClick={() => props.onOpenConfig(source)} title="Настроить парсинг файла">⚙</button>
-                <button type="button" className="rounded border border-red-300 px-2 text-xs text-red-600" onClick={() => props.onDeleteSource(source)} title="Удалить файл">
-                  🗑
-                </button>
+                {/* Erase: clear parsing/chunking/DB data (keep source entry) */}
                 <button type="button" className="rounded border border-amber-300 px-2 text-xs text-amber-700" onClick={() => props.onEraseSource(source)} title="Стереть parsing/base данные">
                   ✖
+                </button>
+                {/* Delete: remove document row + all data */}
+                <button type="button" className="rounded border border-red-300 px-2 text-xs text-red-600" onClick={() => props.onDeleteSource(source)} title="Удалить документ полностью">
+                  🗑
                 </button>
               </div>
             </div>

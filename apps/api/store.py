@@ -218,6 +218,8 @@ class InMemoryStore:
         file_path = Path(path)
         ext = file_path.suffix.lower().replace(".", "")
         file_type = ext if ext in {"pdf", "docx", "xlsx"} else "other"
+        settings = self.get_parsing_settings(notebook_id)
+        should_index = indexed or settings.auto_parse_on_upload
         source = Source(
             id=str(uuid4()),
             notebook_id=notebook_id,
@@ -225,7 +227,7 @@ class InMemoryStore:
             file_path=str(file_path),
             file_type=file_type,
             size_bytes=file_path.stat().st_size if file_path.exists() else 0,
-            status="indexed" if indexed else "indexing",
+            status="indexed" if indexed else ("indexing" if should_index else "new"),
             added_at=now_iso(),
             has_docs=file_path.exists(),
             has_parsing=indexed,
@@ -234,8 +236,9 @@ class InMemoryStore:
         _global_db.upsert_source(source.model_dump())
         if indexed:
             return source
-        thread = threading.Thread(target=self._index_source_sync, args=(source.id,), daemon=True)
-        thread.start()
+        if should_index:
+            thread = threading.Thread(target=self._index_source_sync, args=(source.id,), daemon=True)
+            thread.start()
         return source
 
     async def save_upload(self, notebook_id: str, filename: str, content: bytes) -> Source:
@@ -307,6 +310,31 @@ class InMemoryStore:
         thread.start()
         return source
 
+    def delete_source_fully(self, source_id: str) -> bool:
+        """Delete source completely: file, parsing/chunks, DB records, and in-memory entry."""
+        source = self.sources.get(source_id)
+        if not source:
+            return False
+        # Delete physical file
+        path = Path(source.file_path)
+        if path.exists() and path.is_file():
+            path.unlink(missing_ok=True)
+        # Delete parsing/chunks JSON
+        parsing_file = CHUNKS_DIR / source.notebook_id / f"{source.id}.json"
+        parsing_file.unlink(missing_ok=True)
+        # Remove from notebook SQLite DB
+        try:
+            notebook_db = db_for_notebook(source.notebook_id)
+            notebook_db.conn.execute("DELETE FROM documents WHERE doc_id=?", (source.id,))
+            notebook_db.conn.commit()
+            notebook_db.close()
+        except Exception:
+            logger.exception("[delete_fully] failed to remove from notebook DB for source %s", source_id)
+        # Remove from global DB and in-memory store
+        _global_db.delete_source(source_id)
+        self.sources.pop(source_id, None)
+        return True
+
     def delete_source_file(self, source_id: str) -> bool:
         source = self.sources.get(source_id)
         if not source:
@@ -361,6 +389,7 @@ class InMemoryStore:
             payload.min_chunk_size,
             payload.ocr_enabled,
             payload.ocr_language,
+            payload.auto_parse_on_upload,
         )
         return payload
 

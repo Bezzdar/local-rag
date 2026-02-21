@@ -74,6 +74,14 @@ export default function ParsingSettingsPanel({ notebookId }: Props) {
         />
         OCR enabled
       </label>
+      <label className="text-xs inline-flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={draft?.auto_parse_on_upload ?? false}
+          onChange={(e) => setDraft((prev) => ({ ...(prev ?? parsingSettings.data), auto_parse_on_upload: e.target.checked }))}
+        />
+        Автоматически парсить при загрузке
+      </label>
       <button
         type="button"
         className="rounded border border-slate-300 px-2 py-1 text-xs"

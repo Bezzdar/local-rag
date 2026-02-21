@@ -164,7 +164,7 @@ def update_source(source_id: str, payload: UpdateSourceRequest) -> Source:
 
 @router.delete("/sources/{source_id}", status_code=204, response_class=Response)
 def delete_source(source_id: str) -> Response:
-    if not store.delete_source_file(source_id):
+    if not store.delete_source_fully(source_id):
         raise HTTPException(status_code=404, detail="Source not found")
     return Response(status_code=204)
 
