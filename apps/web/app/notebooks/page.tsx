@@ -13,6 +13,8 @@ export default function NotebooksPage() {
   const [isRuntimeOpen, setIsRuntimeOpen] = useState(true);
   const [isParsingOpen, setIsParsingOpen] = useState(true);
   const [selectedNotebookId, setSelectedNotebookId] = useState<string | null>(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [newNotebookName, setNewNotebookName] = useState('');
   const queryClient = useQueryClient();
   const notebooks = useQuery({ queryKey: ['notebooks'], queryFn: api.listNotebooks });
   const createNotebook = useMutation({
@@ -23,6 +25,21 @@ export default function NotebooksPage() {
     mutationFn: api.deleteNotebook,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notebooks'] }),
   });
+
+  function openDialog() {
+    setNewNotebookName('');
+    setIsDialogOpen(true);
+  }
+
+  function handleCreate() {
+    const title = newNotebookName.trim() || `Ноутбук ${new Date().toLocaleTimeString()}`;
+    createNotebook.mutate(title);
+    setIsDialogOpen(false);
+  }
+
+  function handleCancel() {
+    setIsDialogOpen(false);
+  }
 
   if (notebooks.isLoading) {
     return <div className="p-6">Loading notebooks...</div>;
@@ -44,9 +61,9 @@ export default function NotebooksPage() {
             </div>
             <button
               className="rounded bg-slate-900 px-3 py-2 text-white"
-              onClick={() => createNotebook.mutate(`Notebook ${new Date().toLocaleTimeString()}`)}
+              onClick={openDialog}
             >
-              New notebook
+              Новый ноутбук
             </button>
           </div>
 
@@ -118,6 +135,39 @@ export default function NotebooksPage() {
           ) : null}
         </aside>
       </div>
+
+      {isDialogOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-sm rounded border bg-white p-6 shadow-lg">
+            <h2 className="mb-4 text-base font-semibold">Новый ноутбук</h2>
+            <input
+              type="text"
+              className="mb-4 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+              placeholder="Название ноутбука"
+              value={newNotebookName}
+              onChange={(e) => setNewNotebookName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') handleCancel(); }}
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                onClick={handleCancel}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="rounded bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700"
+                onClick={handleCreate}
+              >
+                Принять
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
