@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AgentManifestSchema, ChatMessageSchema, CitationSchema, NoteSchema, NotebookSchema, ParsingSettingsSchema, SourceSchema } from '@/types/dto';
+import { AgentManifestSchema, ChatMessageSchema, CitationSchema, GlobalNoteSchema, NoteSchema, NotebookSchema, ParsingSettingsSchema, SavedCitationSchema, SourceSchema } from '@/types/dto';
 
 const apiBase = (process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000').replace(/\/+$/, '');
 
@@ -80,6 +80,22 @@ export const api = {
       { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) },
       SourceSchema,
     ),
+  openSource: async (sourceId: string) => {
+    const response = await fetch(`${apiBase}/api/sources/${sourceId}/open`, { method: 'POST' });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+  },
+  reorderSources: async (notebookId: string, orderedIds: string[]) => {
+    const response = await fetch(`${apiBase}/api/notebooks/${notebookId}/sources/reorder`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ordered_ids: orderedIds }),
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+  },
   deleteAllSourceFiles: async (notebookId: string) => {
     const response = await fetch(`${apiBase}/api/notebooks/${notebookId}/sources/files`, { method: 'DELETE' });
     if (!response.ok) {
@@ -109,6 +125,52 @@ export const api = {
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, content }) },
       NoteSchema,
     ),
+  // Saved Citations (persistent, per-notebook)
+  listSavedCitations: (notebookId: string) =>
+    request(`/api/notebooks/${notebookId}/saved-citations`, { method: 'GET' }, z.array(SavedCitationSchema)),
+  saveCitation: (
+    notebookId: string,
+    payload: {
+      source_id: string;
+      filename: string;
+      doc_order: number;
+      chunk_text: string;
+      page?: number | null;
+      sheet?: string | null;
+      source_notebook_id: string;
+      source_type?: string;
+    },
+  ) =>
+    request(
+      `/api/notebooks/${notebookId}/saved-citations`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) },
+      SavedCitationSchema,
+    ),
+  deleteSavedCitation: async (notebookId: string, citationId: string) => {
+    const response = await fetch(`${apiBase}/api/notebooks/${notebookId}/saved-citations/${citationId}`, { method: 'DELETE' });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+  },
+  // Global Notes (persistent, cross-notebook)
+  listGlobalNotes: () => request('/api/notes', { method: 'GET' }, z.array(GlobalNoteSchema)),
+  createGlobalNote: (payload: {
+    content: string;
+    source_notebook_id: string;
+    source_notebook_title: string;
+    source_refs?: Record<string, string | number>[];
+  }) =>
+    request(
+      '/api/notes',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) },
+      GlobalNoteSchema,
+    ),
+  deleteGlobalNote: async (noteId: string) => {
+    const response = await fetch(`${apiBase}/api/notes/${noteId}`, { method: 'DELETE' });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+  },
   listAgents: () => request('/api/agents', { method: 'GET' }, z.array(AgentManifestSchema)),
   fileUrl: (path: string) => `${apiBase}/api/files?path=${encodeURIComponent(path)}`,
 };

@@ -30,8 +30,14 @@ def build_chat_history(messages: Iterable[ChatMessage], limit: int = DEFAULT_MOD
     return [{"role": item.role, "content": item.content} for item in window if item.content.strip()]
 
 
-def build_rag_context(chunks: list[dict]) -> str:
-    """Формирует строку контекста из retrieved-чанков для вставки в prompt."""
+def build_rag_context(chunks: list[dict], source_order_map: dict[str, int] | None = None) -> str:
+    """Формирует строку контекста из retrieved-чанков для вставки в prompt.
+
+    Args:
+        chunks: Retrieved chunks from search.
+        source_order_map: Mapping source_id -> sequential document number (1-based).
+                          When provided, [N] in LLM output = document number in notebook list.
+    """
     if not chunks:
         return ""
     parts: list[str] = []
@@ -41,7 +47,12 @@ def build_rag_context(chunks: list[dict]) -> str:
         page_str = f" (стр. {page})" if isinstance(page, int) else ""
         text = (chunk.get("text") or "").strip()
         if text:
-            parts.append(f"[{i}] {src}{page_str}:\n{text}")
+            source_id = chunk.get("source_id", "")
+            if source_order_map and source_id in source_order_map:
+                ref_num = source_order_map[source_id]
+            else:
+                ref_num = i
+            parts.append(f"[{ref_num}] {src}{page_str}:\n{text}")
     return "\n\n".join(parts)
 
 
@@ -51,6 +62,9 @@ def inject_rag_context(history: list[dict[str, str]], rag_context: str) -> list[
         "role": "system",
         "content": (
             "Используй следующие фрагменты документов как контекст для ответа на вопрос пользователя. "
+            "Каждый фрагмент помечен номером источника в квадратных скобках, например [1], [2]. "
+            "При цитировании конкретного фрагмента ОБЯЗАТЕЛЬНО указывай его номер источника в скобках, "
+            "например: 'Согласно [1], ...' или '... как указано в [2]'. "
             "Опирайся только на предоставленные данные; если ответ не содержится в контексте — сообщи об этом.\n\n"
             f"{rag_context}"
         ),

@@ -9,6 +9,8 @@ DOCS_DIR = DATA_DIR / "docs"
 CHUNKS_DIR = DATA_DIR / "parsing"
 NOTEBOOKS_DB_DIR = DATA_DIR / "notebooks"
 LOGS_DIR = DATA_DIR / "logs"
+CITATIONS_DIR = DATA_DIR / "citations"
+NOTES_DIR = DATA_DIR / "notes"
 
 EMBEDDING_ENABLED = os.getenv("EMBEDDING_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
 EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "ollama")
