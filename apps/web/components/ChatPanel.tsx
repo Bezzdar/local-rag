@@ -231,7 +231,7 @@ export default function ChatPanel(props: Props) {
             setInput('');
           }}
         >
-          Send
+          Отправить
         </button>
       </div>
 
