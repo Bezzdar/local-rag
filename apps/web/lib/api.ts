@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AgentManifestSchema, ChatMessageSchema, CitationSchema, GlobalNoteSchema, NoteSchema, NotebookSchema, ParsingSettingsSchema, SavedCitationSchema, SourceSchema } from '@/types/dto';
+import { AgentManifestSchema, ChatMessageSchema, CitationSchema, GlobalNoteSchema, IndividualConfig, NoteSchema, NotebookSchema, ParsingSettings, ParsingSettingsSchema, SavedCitationSchema, SourceSchema } from '@/types/dto';
 
 const apiBase = (process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000').replace(/\/+$/, '');
 
@@ -42,7 +42,7 @@ export const api = {
     ),
   updateParsingSettings: (
     notebookId: string,
-    payload: { chunk_size: number; chunk_overlap: number; min_chunk_size: number; ocr_enabled: boolean; ocr_language: string; auto_parse_on_upload: boolean },
+    payload: ParsingSettings,
   ) =>
     request(
       `/api/notebooks/${notebookId}/parsing-settings`,
@@ -67,12 +67,7 @@ export const api = {
     sourceId: string,
     payload: {
       is_enabled?: boolean;
-      individual_config?: {
-        chunk_size: number | null;
-        chunk_overlap: number | null;
-        ocr_enabled: boolean | null;
-        ocr_language: string | null;
-      };
+      individual_config?: IndividualConfig;
     },
   ) =>
     request(

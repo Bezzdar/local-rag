@@ -52,7 +52,11 @@ async def index_source(
         metadata_override={
             "doc_id": source_id,
             "individual_config": (source_state or {}).get("individual_config")
-            or {"chunk_size": None, "chunk_overlap": None, "ocr_enabled": None, "ocr_language": None},
+            or {
+                "chunk_size": None, "chunk_overlap": None, "ocr_enabled": None, "ocr_language": None,
+                "chunking_method": None, "context_window": None, "use_llm_summary": None,
+                "doc_type": None, "parent_chunk_size": None, "child_chunk_size": None, "symbol_separator": None,
+            },
             "is_enabled": (source_state or {}).get("is_enabled", True),
         },
     )

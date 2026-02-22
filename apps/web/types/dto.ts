@@ -7,6 +7,22 @@ export const NotebookSchema = z.object({
   updated_at: z.string(),
 });
 
+export const IndividualConfigSchema = z.object({
+  chunk_size: z.number().nullable().optional(),
+  chunk_overlap: z.number().nullable().optional(),
+  ocr_enabled: z.boolean().nullable().optional(),
+  ocr_language: z.string().nullable().optional(),
+  chunking_method: z.string().nullable().optional(),
+  context_window: z.number().nullable().optional(),
+  use_llm_summary: z.boolean().nullable().optional(),
+  doc_type: z.string().nullable().optional(),
+  parent_chunk_size: z.number().nullable().optional(),
+  child_chunk_size: z.number().nullable().optional(),
+  symbol_separator: z.string().nullable().optional(),
+});
+
+export type IndividualConfig = z.infer<typeof IndividualConfigSchema>;
+
 export const SourceSchema = z.object({
   id: z.string(),
   notebook_id: z.string(),
@@ -21,14 +37,7 @@ export const SourceSchema = z.object({
   has_parsing: z.boolean().optional(),
   has_base: z.boolean().optional(),
   sort_order: z.number().default(0),
-  individual_config: z
-    .object({
-      chunk_size: z.number().nullable(),
-      chunk_overlap: z.number().nullable(),
-      ocr_enabled: z.boolean().nullable(),
-      ocr_language: z.string().nullable(),
-    })
-    .optional(),
+  individual_config: IndividualConfigSchema.optional(),
 });
 
 export const ChatMessageSchema = z.object({
@@ -107,6 +116,27 @@ export const AgentManifestSchema = z.object({
 
 export type AgentManifest = z.infer<typeof AgentManifestSchema>;
 
+export const CHUNKING_METHODS = ['general', 'context_enrichment', 'hierarchy', 'pcr', 'symbol'] as const;
+export type ChunkingMethod = typeof CHUNKING_METHODS[number];
+
+export const DOC_TYPES = ['technical_manual', 'gost', 'api_docs', 'markdown'] as const;
+export type DocType = typeof DOC_TYPES[number];
+
+export const CHUNKING_METHOD_LABELS: Record<ChunkingMethod, string> = {
+  general: 'General',
+  context_enrichment: 'Context Enrichment',
+  hierarchy: 'Hierarchy',
+  pcr: 'PCR',
+  symbol: 'Symbol',
+};
+
+export const DOC_TYPE_LABELS: Record<DocType, string> = {
+  technical_manual: 'Technical Manual',
+  gost: 'GOST',
+  api_docs: 'API Docs',
+  markdown: 'Markdown',
+};
+
 export const ParsingSettingsSchema = z.object({
   chunk_size: z.number(),
   chunk_overlap: z.number(),
@@ -114,6 +144,13 @@ export const ParsingSettingsSchema = z.object({
   ocr_enabled: z.boolean(),
   ocr_language: z.string(),
   auto_parse_on_upload: z.boolean().default(false),
+  chunking_method: z.string().default('general'),
+  context_window: z.number().default(128),
+  use_llm_summary: z.boolean().default(false),
+  doc_type: z.string().default('technical_manual'),
+  parent_chunk_size: z.number().default(1024),
+  child_chunk_size: z.number().default(128),
+  symbol_separator: z.string().default('---chunk---'),
 });
 
 export type ParsingSettings = z.infer<typeof ParsingSettingsSchema>;

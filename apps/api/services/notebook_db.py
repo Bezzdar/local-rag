@@ -71,7 +71,9 @@ class NotebookDB:
                 parent_header TEXT,
                 chunk_text TEXT NOT NULL,
                 is_enabled INTEGER NOT NULL DEFAULT 1,
-                token_count INTEGER NOT NULL DEFAULT 0
+                token_count INTEGER NOT NULL DEFAULT 0,
+                embedding_text TEXT,
+                parent_chunk_id TEXT
             );
 
             CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
@@ -111,6 +113,15 @@ class NotebookDB:
                 )
                 """
             )
+        # Add new columns to existing databases (idempotent)
+        for _sql in [
+            "ALTER TABLE chunks ADD COLUMN embedding_text TEXT",
+            "ALTER TABLE chunks ADD COLUMN parent_chunk_id TEXT",
+        ]:
+            try:
+                self.conn.execute(_sql)
+            except Exception:
+                pass  # Column already exists
         self.conn.commit()
 
     def close(self) -> None:
@@ -177,8 +188,9 @@ class NotebookDB:
                 """
                 INSERT INTO chunks (
                     chunk_id, doc_id, chunk_index, page_number, chunk_type,
-                    section_header, parent_header, chunk_text, is_enabled, token_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    section_header, parent_header, chunk_text, is_enabled, token_count,
+                    embedding_text, parent_chunk_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     chunk_id,
@@ -191,6 +203,8 @@ class NotebookDB:
                     chunk.get("text", ""),
                     1,
                     int(getattr(item.meta, "token_count", 0)),
+                    chunk.get("embedding_text"),
+                    chunk.get("parent_chunk_id"),
                 ),
             )
             rowid = int(cursor.lastrowid)

@@ -29,22 +29,25 @@ class GlobalDB:
 
     def _migrate(self) -> None:
         with self._lock:
-            # Add missing columns for older databases
-            try:
-                self._conn.execute("ALTER TABLE parsing_settings ADD COLUMN auto_parse_on_upload INTEGER NOT NULL DEFAULT 0")
-                self._conn.commit()
-            except Exception:
-                pass  # Column already exists
-            try:
-                self._conn.execute("ALTER TABLE sources ADD COLUMN has_base INTEGER NOT NULL DEFAULT 0")
-                self._conn.commit()
-            except Exception:
-                pass  # Column already exists
-            try:
-                self._conn.execute("ALTER TABLE sources ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
-                self._conn.commit()
-            except Exception:
-                pass  # Column already exists
+            # Add missing columns for older databases (idempotent)
+            _alter_statements = [
+                "ALTER TABLE parsing_settings ADD COLUMN auto_parse_on_upload INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE parsing_settings ADD COLUMN chunking_method TEXT NOT NULL DEFAULT 'general'",
+                "ALTER TABLE parsing_settings ADD COLUMN context_window INTEGER NOT NULL DEFAULT 128",
+                "ALTER TABLE parsing_settings ADD COLUMN use_llm_summary INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE parsing_settings ADD COLUMN doc_type TEXT NOT NULL DEFAULT 'technical_manual'",
+                "ALTER TABLE parsing_settings ADD COLUMN parent_chunk_size INTEGER NOT NULL DEFAULT 1024",
+                "ALTER TABLE parsing_settings ADD COLUMN child_chunk_size INTEGER NOT NULL DEFAULT 128",
+                "ALTER TABLE parsing_settings ADD COLUMN symbol_separator TEXT NOT NULL DEFAULT '---chunk---'",
+                "ALTER TABLE sources ADD COLUMN has_base INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE sources ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+            ]
+            for _sql in _alter_statements:
+                try:
+                    self._conn.execute(_sql)
+                    self._conn.commit()
+                except Exception:
+                    pass  # Column already exists
             self._conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS notebooks (
@@ -187,6 +190,13 @@ class GlobalDB:
             "chunk_overlap": None,
             "ocr_enabled": None,
             "ocr_language": None,
+            "chunking_method": None,
+            "context_window": None,
+            "use_llm_summary": None,
+            "doc_type": None,
+            "parent_chunk_size": None,
+            "child_chunk_size": None,
+            "symbol_separator": None,
         }
         with self._lock:
             rows = self._conn.execute("SELECT * FROM sources ORDER BY sort_order, added_at").fetchall()
@@ -220,19 +230,37 @@ class GlobalDB:
         ocr_enabled: bool,
         ocr_language: str,
         auto_parse_on_upload: bool = False,
+        chunking_method: str = "general",
+        context_window: int = 128,
+        use_llm_summary: bool = False,
+        doc_type: str = "technical_manual",
+        parent_chunk_size: int = 1024,
+        child_chunk_size: int = 128,
+        symbol_separator: str = "---chunk---",
     ) -> None:
         with self._lock:
             self._conn.execute(
                 """
                 INSERT INTO parsing_settings
-                    (notebook_id, chunk_size, chunk_overlap, min_chunk_size, ocr_enabled, ocr_language, auto_parse_on_upload)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (notebook_id, chunk_size, chunk_overlap, min_chunk_size, ocr_enabled, ocr_language,
+                     auto_parse_on_upload, chunking_method, context_window, use_llm_summary,
+                     doc_type, parent_chunk_size, child_chunk_size, symbol_separator)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(notebook_id) DO UPDATE SET
                     chunk_size=excluded.chunk_size, chunk_overlap=excluded.chunk_overlap,
                     min_chunk_size=excluded.min_chunk_size, ocr_enabled=excluded.ocr_enabled,
-                    ocr_language=excluded.ocr_language, auto_parse_on_upload=excluded.auto_parse_on_upload
+                    ocr_language=excluded.ocr_language, auto_parse_on_upload=excluded.auto_parse_on_upload,
+                    chunking_method=excluded.chunking_method, context_window=excluded.context_window,
+                    use_llm_summary=excluded.use_llm_summary, doc_type=excluded.doc_type,
+                    parent_chunk_size=excluded.parent_chunk_size, child_chunk_size=excluded.child_chunk_size,
+                    symbol_separator=excluded.symbol_separator
                 """,
-                (notebook_id, chunk_size, chunk_overlap, min_chunk_size, 1 if ocr_enabled else 0, ocr_language, 1 if auto_parse_on_upload else 0),
+                (
+                    notebook_id, chunk_size, chunk_overlap, min_chunk_size,
+                    1 if ocr_enabled else 0, ocr_language, 1 if auto_parse_on_upload else 0,
+                    chunking_method, context_window, 1 if use_llm_summary else 0,
+                    doc_type, parent_chunk_size, child_chunk_size, symbol_separator,
+                ),
             )
             self._conn.commit()
 
@@ -244,6 +272,13 @@ class GlobalDB:
             d = dict(row)
             d["ocr_enabled"] = bool(d["ocr_enabled"])
             d["auto_parse_on_upload"] = bool(d.get("auto_parse_on_upload", 0))
+            d["use_llm_summary"] = bool(d.get("use_llm_summary", 0))
+            d.setdefault("chunking_method", "general")
+            d.setdefault("context_window", 128)
+            d.setdefault("doc_type", "technical_manual")
+            d.setdefault("parent_chunk_size", 1024)
+            d.setdefault("child_chunk_size", 128)
+            d.setdefault("symbol_separator", "---chunk---")
             result.append(d)
         return result
 

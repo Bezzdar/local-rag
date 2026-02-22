@@ -40,6 +40,11 @@ class ChunkType(Enum):
     CAPTION = "caption"
 
 
+# Supported chunking methods and document types
+CHUNKING_METHODS = ["general", "context_enrichment", "hierarchy", "pcr", "symbol"]
+DOC_TYPES = ["technical_manual", "gost", "api_docs", "markdown"]
+
+
 @dataclass
 class ParserConfig:
     chunk_size: int = 512
@@ -47,6 +52,18 @@ class ParserConfig:
     min_chunk_size: int = 50
     ocr_enabled: bool = True
     ocr_language: str = "rus+eng"
+    # Chunking method selection
+    chunking_method: str = "general"
+    # Context Enrichment params
+    context_window: int = 128
+    use_llm_summary: bool = False
+    # Hierarchy params
+    doc_type: str = "technical_manual"
+    # PCR (Parent-Child Retrieval) params
+    parent_chunk_size: int = 1024
+    child_chunk_size: int = 128
+    # Symbol separator params
+    symbol_separator: str = "---chunk---"
 
 
 @dataclass
@@ -61,6 +78,9 @@ class ParsedChunk:
     next_chunk_head: Optional[str]
     doc_id: str
     source_filename: str
+    # Optional fields for advanced chunking methods
+    embedding_text: Optional[str] = None   # Text used for embedding (differs from display text in CE/PCR)
+    parent_chunk_id: Optional[str] = None  # For PCR: child chunks reference their parent
 
 
 @dataclass
@@ -89,8 +109,16 @@ class DocumentMetadata:
             "chunk_overlap": None,
             "ocr_enabled": None,
             "ocr_language": None,
+            "chunking_method": None,
+            "context_window": None,
+            "use_llm_summary": None,
+            "doc_type": None,
+            "parent_chunk_size": None,
+            "child_chunk_size": None,
+            "symbol_separator": None,
         }
     )
+    chunking_method: str = "general"
 
 
 def _tokenize(text: str) -> list[str]:
@@ -149,7 +177,7 @@ class DocumentParser:
         blocks, total_pages = self._extract_blocks(path, suffix)
 
         doc_id = str(metadata_override.get("doc_id") or uuid4())
-        chunks = self._chunk_blocks(blocks, doc_id=doc_id, source_filename=path.name)
+        chunks = self._chunk_blocks_dispatch(blocks, doc_id=doc_id, source_filename=path.name)
 
         metadata = DocumentMetadata(
             doc_id=doc_id,
@@ -165,7 +193,7 @@ class DocumentParser:
             total_pages=total_pages,
             total_chunks=len(chunks),
             language=self.detect_language("\n".join(block["text"] for block in blocks)[:1000]),
-            parser_version="1.0.0",
+            parser_version="1.1.0",
             parsed_at=datetime.now(timezone.utc).isoformat(),
             individual_config=metadata_override.get("individual_config")
             or {
@@ -173,8 +201,16 @@ class DocumentParser:
                 "chunk_overlap": None,
                 "ocr_enabled": None,
                 "ocr_language": None,
+                "chunking_method": None,
+                "context_window": None,
+                "use_llm_summary": None,
+                "doc_type": None,
+                "parent_chunk_size": None,
+                "child_chunk_size": None,
+                "symbol_separator": None,
             },
             is_enabled=bool(metadata_override.get("is_enabled", True)),
+            chunking_method=self.config.chunking_method,
         )
         self.save_parsing_result(notebook_id, metadata, chunks)
         return metadata, chunks
@@ -441,6 +477,23 @@ class DocumentParser:
                     blocks.extend(self._text_to_structured_blocks(text, page_idx + 1))
         return blocks
 
+    # --- Chunking dispatch ---
+
+    def _chunk_blocks_dispatch(self, blocks: list[dict], doc_id: str, source_filename: str) -> list[ParsedChunk]:
+        method = self.config.chunking_method
+        if method == "context_enrichment":
+            return self._chunk_method_context_enrichment(blocks, doc_id, source_filename)
+        if method == "hierarchy":
+            return self._chunk_method_hierarchy(blocks, doc_id, source_filename)
+        if method == "pcr":
+            return self._chunk_method_pcr(blocks, doc_id, source_filename)
+        if method == "symbol":
+            return self._chunk_method_symbol(blocks, doc_id, source_filename)
+        # Default: general
+        return self._chunk_blocks(blocks, doc_id=doc_id, source_filename=source_filename)
+
+    # --- Method 1: General (existing) ---
+
     def _chunk_blocks(self, blocks: list[dict], doc_id: str, source_filename: str) -> list[ParsedChunk]:
         chunks: list[ParsedChunk] = []
         pending_header: Optional[dict] = None
@@ -574,6 +627,223 @@ class DocumentParser:
                 )
             )
         return chunks
+
+    # --- Method 2: Context Enrichment ---
+
+    def _chunk_method_context_enrichment(self, blocks: list[dict], doc_id: str, source_filename: str) -> list[ParsedChunk]:
+        """Context Enrichment: каждый чанк получает контекстную обёртку из соседних фрагментов."""
+        # Step 1: базовое разбиение (как General)
+        chunks = self._chunk_blocks(blocks, doc_id=doc_id, source_filename=source_filename)
+
+        # Step 2: добавить контекстную обёртку в embedding_text
+        cw = max(0, self.config.context_window)
+        for i, chunk in enumerate(chunks):
+            prev_ctx = chunks[i - 1].text[-cw:] if i > 0 and cw > 0 else ""
+            next_ctx = chunks[i + 1].text[:cw] if i < len(chunks) - 1 and cw > 0 else ""
+            parts = [p for p in [prev_ctx, chunk.text, next_ctx] if p]
+            chunk.embedding_text = " ".join(parts) if len(parts) > 1 else None
+
+        return chunks
+
+    # --- Method 3: Hierarchy ---
+
+    # Patterns for different document types
+    _HIERARCHY_PATTERNS = {
+        "gost": [
+            (1, re.compile(r"^\d+\.\s+[А-ЯA-Z\w]")),
+            (2, re.compile(r"^\d+\.\d+\.\s+")),
+            (3, re.compile(r"^\d+\.\d+\.\d+\.\s+")),
+        ],
+        "technical_manual": [
+            (1, re.compile(r"^(Глава|Chapter|РАЗДЕЛ|SECTION)\s+\d+", re.IGNORECASE)),
+            (2, re.compile(r"^\d+\.\d+\s+[А-ЯA-Z\w]")),
+            (3, re.compile(r"^\d+\.\d+\.\d+\s+")),
+        ],
+        "api_docs": [
+            (1, re.compile(r"^#{1,2}\s+")),
+            (2, re.compile(r"^#{3}\s+")),
+            (3, re.compile(r"^#{4,}\s+")),
+        ],
+        "markdown": [
+            (1, re.compile(r"^#\s+")),
+            (2, re.compile(r"^##\s+")),
+            (3, re.compile(r"^###\s+")),
+            (4, re.compile(r"^#{4,}\s+")),
+        ],
+    }
+
+    def _detect_header_level(self, text: str, patterns: list[tuple[int, re.Pattern]]) -> Optional[int]:
+        for level, pattern in patterns:
+            if pattern.match(text):
+                return level
+        return None
+
+    def _build_breadcrumb(self, hierarchy: dict[int, str]) -> str:
+        parts = [hierarchy[level] for level in sorted(hierarchy.keys()) if hierarchy.get(level)]
+        return " > ".join(parts) if parts else ""
+
+    def _chunk_method_hierarchy(self, blocks: list[dict], doc_id: str, source_filename: str) -> list[ParsedChunk]:
+        """Hierarchy: разбиение по структурным маркерам документа с breadcrumb."""
+        doc_type = self.config.doc_type if self.config.doc_type in self._HIERARCHY_PATTERNS else "technical_manual"
+        patterns = self._HIERARCHY_PATTERNS[doc_type]
+
+        chunks: list[ParsedChunk] = []
+        hierarchy: dict[int, str] = {}  # level -> header text
+        current_content_blocks: list[dict] = []
+
+        def _flush(header_level: Optional[int] = None) -> None:
+            nonlocal current_content_blocks
+            if not current_content_blocks:
+                return
+            breadcrumb = self._build_breadcrumb(hierarchy)
+            full_text = "\n".join(b["text"] for b in current_content_blocks)
+            page_number = current_content_blocks[0].get("page_number")
+
+            if _token_count(full_text) <= max(1, self.config.chunk_size):
+                # Section fits in one chunk
+                section_text = f"{breadcrumb}\n\n{full_text}".strip() if breadcrumb else full_text
+                chunks.append(ParsedChunk(
+                    text=section_text,
+                    chunk_type=ChunkType.TEXT,
+                    chunk_index=len(chunks),
+                    page_number=page_number,
+                    section_header=breadcrumb or None,
+                    parent_header=None,
+                    prev_chunk_tail=None,
+                    next_chunk_head=None,
+                    doc_id=doc_id,
+                    source_filename=source_filename,
+                ))
+            else:
+                # Section too large: fallback to fixed chunking with breadcrumb prefix
+                fake_block = {
+                    "chunk_type": ChunkType.TEXT,
+                    "page_number": page_number,
+                    "section_header": breadcrumb or None,
+                    "parent_header": None,
+                }
+                sub_chunks = self._chunk_text_block(
+                    full_text, fake_block, doc_id, source_filename, len(chunks), ChunkType.TEXT
+                )
+                # Prepend breadcrumb to each sub-chunk
+                for sub in sub_chunks:
+                    if breadcrumb:
+                        sub.text = f"{breadcrumb}\n\n{sub.text}".strip()
+                    sub.chunk_index = len(chunks)
+                    chunks.append(sub)
+
+            current_content_blocks = []
+
+        for block in blocks:
+            if block["chunk_type"] == ChunkType.HEADER:
+                header_level = self._detect_header_level(block["text"], patterns)
+                if header_level is not None:
+                    _flush(header_level)
+                    # Clear sub-levels
+                    hierarchy = {k: v for k, v in hierarchy.items() if k < header_level}
+                    hierarchy[header_level] = re.sub(r"^#{1,6}\s*", "", block["text"])
+                else:
+                    # Unrecognized header: treat as content
+                    current_content_blocks.append(block)
+            else:
+                current_content_blocks.append(block)
+
+        _flush()
+
+        # Apply overlap metadata
+        for idx, chunk in enumerate(chunks):
+            chunk.chunk_index = idx
+
+        return chunks
+
+    # --- Method 4: PCR (Parent-Child Retrieval) ---
+
+    def _chunk_method_pcr(self, blocks: list[dict], doc_id: str, source_filename: str) -> list[ParsedChunk]:
+        """PCR: двухуровневая система. Embed child (маленький), retrieve parent (большой)."""
+        # Build full text from all non-header blocks
+        all_text_parts = []
+        for block in blocks:
+            if block["chunk_type"] != ChunkType.HEADER and block["text"].strip():
+                all_text_parts.append(block["text"])
+        full_text = "\n".join(all_text_parts)
+
+        parent_step = max(1, self.config.parent_chunk_size)
+        child_step = max(1, self.config.child_chunk_size)
+        parent_tokens = _tokenize(full_text)
+
+        chunks: list[ParsedChunk] = []
+        parent_idx = 0
+
+        for p_offset in range(0, len(parent_tokens), parent_step):
+            parent_token_slice = parent_tokens[p_offset: p_offset + parent_step]
+            parent_text = " ".join(parent_token_slice).strip()
+            if not parent_text:
+                continue
+
+            parent_id = f"{doc_id}:pcr_parent:{parent_idx}"
+            child_tokens = _tokenize(parent_text)
+
+            for c_offset in range(0, len(child_tokens), child_step):
+                child_token_slice = child_tokens[c_offset: c_offset + child_step]
+                child_text = " ".join(child_token_slice).strip()
+                if not child_text:
+                    continue
+
+                chunks.append(ParsedChunk(
+                    text=parent_text,          # Full parent: sent to LLM as context
+                    embedding_text=child_text, # Small child: used for precise embedding
+                    chunk_type=ChunkType.TEXT,
+                    chunk_index=len(chunks),
+                    page_number=None,
+                    section_header=f"Блок {parent_idx + 1}",
+                    parent_header=None,
+                    prev_chunk_tail=None,
+                    next_chunk_head=None,
+                    doc_id=doc_id,
+                    source_filename=source_filename,
+                    parent_chunk_id=parent_id,
+                ))
+
+            parent_idx += 1
+
+        return chunks
+
+    # --- Method 5: Symbol ---
+
+    def _chunk_method_symbol(self, blocks: list[dict], doc_id: str, source_filename: str) -> list[ParsedChunk]:
+        """Symbol: разбиение по специальному символу-разделителю, расставленному пользователем."""
+        sep = self.config.symbol_separator or "---chunk---"
+
+        # Join all block texts into full document text
+        all_text = "\n".join(
+            block["text"] for block in blocks
+            if block["chunk_type"] != ChunkType.HEADER and block["text"].strip()
+        )
+
+        segments = [seg.strip() for seg in all_text.split(sep) if seg.strip()]
+
+        if not segments:
+            # Fallback: treat entire text as one chunk
+            segments = [all_text.strip()] if all_text.strip() else []
+
+        chunks: list[ParsedChunk] = []
+        for idx, segment in enumerate(segments):
+            chunks.append(ParsedChunk(
+                text=segment,
+                chunk_type=ChunkType.TEXT,
+                chunk_index=idx,
+                page_number=None,
+                section_header=None,
+                parent_header=None,
+                prev_chunk_tail=None,
+                next_chunk_head=None,
+                doc_id=doc_id,
+                source_filename=source_filename,
+            ))
+
+        return chunks
+
+    # --- Utilities ---
 
     def detect_language(self, text_sample: str) -> str:
         if not text_sample.strip():

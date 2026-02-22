@@ -136,6 +136,14 @@ class InMemoryStore:
             settings.min_chunk_size,
             settings.ocr_enabled,
             settings.ocr_language,
+            settings.auto_parse_on_upload,
+            settings.chunking_method,
+            settings.context_window,
+            settings.use_llm_summary,
+            settings.doc_type,
+            settings.parent_chunk_size,
+            settings.child_chunk_size,
+            settings.symbol_separator,
         )
 
         demo_dir = DOCS_DIR / notebook.id
@@ -184,6 +192,14 @@ class InMemoryStore:
             settings.min_chunk_size,
             settings.ocr_enabled,
             settings.ocr_language,
+            settings.auto_parse_on_upload,
+            settings.chunking_method,
+            settings.context_window,
+            settings.use_llm_summary,
+            settings.doc_type,
+            settings.parent_chunk_size,
+            settings.child_chunk_size,
+            settings.symbol_separator,
         )
         return notebook
 
@@ -281,6 +297,13 @@ class InMemoryStore:
                 "min_chunk_size": global_cfg.min_chunk_size,
                 "ocr_enabled": bool(global_cfg.ocr_enabled if indiv.get("ocr_enabled") is None else indiv.get("ocr_enabled")),
                 "ocr_language": str(indiv.get("ocr_language") or global_cfg.ocr_language),
+                "chunking_method": str(indiv.get("chunking_method") or global_cfg.chunking_method),
+                "context_window": int(indiv.get("context_window") or global_cfg.context_window),
+                "use_llm_summary": bool(global_cfg.use_llm_summary if indiv.get("use_llm_summary") is None else indiv.get("use_llm_summary")),
+                "doc_type": str(indiv.get("doc_type") or global_cfg.doc_type),
+                "parent_chunk_size": int(indiv.get("parent_chunk_size") or global_cfg.parent_chunk_size),
+                "child_chunk_size": int(indiv.get("child_chunk_size") or global_cfg.child_chunk_size),
+                "symbol_separator": str(indiv.get("symbol_separator") or global_cfg.symbol_separator),
             }
             metadata, _ = asyncio.run(
                 index_source(
@@ -439,6 +462,13 @@ class InMemoryStore:
             payload.ocr_enabled,
             payload.ocr_language,
             payload.auto_parse_on_upload,
+            payload.chunking_method,
+            payload.context_window,
+            payload.use_llm_summary,
+            payload.doc_type,
+            payload.parent_chunk_size,
+            payload.child_chunk_size,
+            payload.symbol_separator,
         )
         return payload
 

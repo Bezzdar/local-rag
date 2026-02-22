@@ -314,7 +314,7 @@ class EmbeddingEngine:
         now = _now_iso()
         for start in range(0, total, self.config.batch_size):
             batch = chunks[start : start + self.config.batch_size]
-            vectors = self.client.get_embeddings([item.get("text", "") for item in batch])
+            vectors = self.client.get_embeddings([item.get("embedding_text") or item.get("text", "") for item in batch])
             if self.config.normalize_embeddings:
                 vectors = [_normalize(vec) for vec in vectors]
             for batch_index, (chunk, vector) in enumerate(zip(batch, vectors)):
