@@ -25,6 +25,18 @@ CHAT_MODE_SPECS: tuple[ChatModeSpec, ...] = (
 CHAT_MODES_BY_CODE = {spec.code: spec for spec in CHAT_MODE_SPECS}
 DEFAULT_CHAT_MODE = "rag"
 
+# Пороги релевантности (применяются к нормализованным RRF-оценкам, диапазон 0–1)
+SCORE_THRESHOLDS: dict[str, float] = {
+    "rag": 0.75,    # строгий порог: только высокорелевантные чанки
+    "model": 0.50,  # мягкий порог: чанки не менее 50 % от лучшего результата
+}
+
+# Сообщение при отсутствии релевантных источников в RAG-режиме (LLM не вызывается)
+RAG_NO_SOURCES_MESSAGE = (
+    "В загруженной документации релевантной информации не найдено. "
+    "Уточните запрос или загрузите нужные документы."
+)
+
 
 def normalize_chat_mode(raw_mode: str) -> str:
     mode = (raw_mode or "").strip().lower()
@@ -32,20 +44,12 @@ def normalize_chat_mode(raw_mode: str) -> str:
 
 
 def build_answer(mode: str, message: str, citations: list[Citation], agent_id: str = "") -> str:
-    spec = CHAT_MODES_BY_CODE[mode]
-
+    """Формирует шаблонный ответ. Используется только для режима Agent."""
     if mode == "agent":
         label = f"Агент [{agent_id}]" if agent_id else "Агент"
         return f"{label}: режим находится в разработке."
 
-    if not spec.uses_retrieval:
-        return f"{spec.title}: ответ на запрос '{message}' с учетом контекста переписки."
-
-    if not citations:
-        return f"{spec.title}: по запросу '{message}' релевантные фрагменты не найдены."
-
-    first = citations[0]
-    return (
-        f"{spec.title}: найдено {len(citations)} фрагментов. "
-        f"Основной источник: {first.filename} (p.{first.location.page}, {first.location.sheet})."
-    )
+    # Fallback для непредвиденных случаев
+    spec = CHAT_MODES_BY_CODE.get(mode)
+    title = spec.title if spec else mode
+    return f"{title}: ответ на запрос '{message}'."

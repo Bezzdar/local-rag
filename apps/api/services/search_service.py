@@ -118,3 +118,23 @@ def chunk_to_citation_fields(chunk: dict[str, Any]) -> tuple[str, int | None, st
     page = chunk.get("page")
     section = chunk.get("section_title") or chunk.get("section_id")
     return filename, page if isinstance(page, int) else None, section
+
+
+def normalize_chunk_scores(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Нормализует поле score в чанках к диапазону [0, 1] относительно максимума.
+
+    Если все оценки равны нулю (например, работает только FTS без эмбеддингов),
+    всем чанкам присваивается score=1.0, чтобы пороговая фильтрация не отбрасывала
+    валидные результаты.
+    """
+    if not chunks:
+        return chunks
+    max_score = max(c.get("score", 0.0) for c in chunks)
+    if max_score <= 0.0:
+        return [{**c, "score": 1.0} for c in chunks]
+    return [{**c, "score": c.get("score", 0.0) / max_score} for c in chunks]
+
+
+def filter_chunks_by_threshold(chunks: list[dict[str, Any]], threshold: float) -> list[dict[str, Any]]:
+    """Возвращает только чанки с нормализованной оценкой >= threshold."""
+    return [c for c in chunks if c.get("score", 0.0) >= threshold]
