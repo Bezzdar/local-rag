@@ -168,6 +168,13 @@ def update_source(source_id: str, payload: UpdateSourceRequest) -> Source:
             "chunk_overlap": payload.individual_config.get("chunk_overlap"),
             "ocr_enabled": payload.individual_config.get("ocr_enabled"),
             "ocr_language": payload.individual_config.get("ocr_language"),
+            "chunking_method": payload.individual_config.get("chunking_method"),
+            "context_window": payload.individual_config.get("context_window"),
+            "use_llm_summary": payload.individual_config.get("use_llm_summary"),
+            "doc_type": payload.individual_config.get("doc_type"),
+            "parent_chunk_size": payload.individual_config.get("parent_chunk_size"),
+            "child_chunk_size": payload.individual_config.get("child_chunk_size"),
+            "symbol_separator": payload.individual_config.get("symbol_separator"),
         }
     store.persist_source(source_id)
     return source

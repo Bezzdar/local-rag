@@ -8,7 +8,7 @@ import { api, CitationsSchema } from '@/lib/api';
 import { logClientEvent } from '@/lib/clientLogger';
 import { ChatMode, openChatStream } from '@/lib/sse';
 import { getRuntimeConfig } from '@/lib/runtime-config';
-import { Citation, GlobalNote, SavedCitation, Source } from '@/types/dto';
+import { CHUNKING_METHOD_LABELS, CHUNKING_METHODS, Citation, DOC_TYPE_LABELS, DOC_TYPES, GlobalNote, IndividualConfig, SavedCitation, Source } from '@/types/dto';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -24,12 +24,33 @@ const RIGHT_MAX = 640;
 
 type SourceConfigModalState = {
   source: Source;
+  // Chunking method
+  useGlobalMethod: boolean;
+  chunkingMethod: string;
+  // General / Context Enrichment
   useGlobalChunkSize: boolean;
   useGlobalOverlap: boolean;
-  useGlobalOcrEnabled: boolean;
-  useGlobalOcrLanguage: boolean;
   chunkSize: string;
   chunkOverlap: string;
+  // Context Enrichment
+  useGlobalContextWindow: boolean;
+  contextWindow: string;
+  useGlobalLlmSummary: boolean;
+  useLlmSummary: boolean;
+  // Hierarchy
+  useGlobalDocType: boolean;
+  docType: string;
+  // PCR
+  useGlobalParentChunkSize: boolean;
+  parentChunkSize: string;
+  useGlobalChildChunkSize: boolean;
+  childChunkSize: string;
+  // Symbol
+  useGlobalSymbolSeparator: boolean;
+  symbolSeparator: string;
+  // OCR
+  useGlobalOcrEnabled: boolean;
+  useGlobalOcrLanguage: boolean;
   ocrEnabled: boolean;
   ocrLanguage: string;
 };
@@ -110,7 +131,7 @@ export default function NotebookWorkspacePage() {
   });
 
   const updateSource = useMutation({
-    mutationFn: ({ sourceId, payload }: { sourceId: string; payload: { is_enabled?: boolean; individual_config?: { chunk_size: number | null; chunk_overlap: number | null; ocr_enabled: boolean | null; ocr_language: string | null } } }) => api.updateSource(sourceId, payload),
+    mutationFn: ({ sourceId, payload }: { sourceId: string; payload: { is_enabled?: boolean; individual_config?: IndividualConfig } }) => api.updateSource(sourceId, payload),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sources', notebookId] }),
   });
 
@@ -435,16 +456,39 @@ export default function NotebookWorkspacePage() {
               onParseSource={(source) => { logClientEvent({ event: 'ui.source.reparse', notebookId, metadata: { sourceId: source.id, filename: source.filename } }); reparseSource.mutate(source.id); }}
               onOpenConfig={(source) => {
                 logClientEvent({ event: 'ui.source.config_open', notebookId, metadata: { sourceId: source.id, filename: source.filename } });
+                const cfg = source.individual_config ?? {};
+                const gs = parsingSettings.data;
                 setSourceConfigModal({
                   source,
-                  useGlobalChunkSize: source.individual_config?.chunk_size === null || source.individual_config?.chunk_size === undefined,
-                  useGlobalOverlap: source.individual_config?.chunk_overlap === null || source.individual_config?.chunk_overlap === undefined,
-                  useGlobalOcrEnabled: source.individual_config?.ocr_enabled === null || source.individual_config?.ocr_enabled === undefined,
-                  useGlobalOcrLanguage: source.individual_config?.ocr_language === null || source.individual_config?.ocr_language === undefined,
-                  chunkSize: String(source.individual_config?.chunk_size ?? parsingSettings.data.chunk_size),
-                  chunkOverlap: String(source.individual_config?.chunk_overlap ?? parsingSettings.data.chunk_overlap),
-                  ocrEnabled: source.individual_config?.ocr_enabled ?? parsingSettings.data.ocr_enabled,
-                  ocrLanguage: source.individual_config?.ocr_language ?? parsingSettings.data.ocr_language,
+                  // Method
+                  useGlobalMethod: cfg.chunking_method == null,
+                  chunkingMethod: cfg.chunking_method ?? gs.chunking_method,
+                  // General
+                  useGlobalChunkSize: cfg.chunk_size == null,
+                  useGlobalOverlap: cfg.chunk_overlap == null,
+                  chunkSize: String(cfg.chunk_size ?? gs.chunk_size),
+                  chunkOverlap: String(cfg.chunk_overlap ?? gs.chunk_overlap),
+                  // Context Enrichment
+                  useGlobalContextWindow: cfg.context_window == null,
+                  contextWindow: String(cfg.context_window ?? gs.context_window),
+                  useGlobalLlmSummary: cfg.use_llm_summary == null,
+                  useLlmSummary: cfg.use_llm_summary ?? gs.use_llm_summary,
+                  // Hierarchy
+                  useGlobalDocType: cfg.doc_type == null,
+                  docType: cfg.doc_type ?? gs.doc_type,
+                  // PCR
+                  useGlobalParentChunkSize: cfg.parent_chunk_size == null,
+                  parentChunkSize: String(cfg.parent_chunk_size ?? gs.parent_chunk_size),
+                  useGlobalChildChunkSize: cfg.child_chunk_size == null,
+                  childChunkSize: String(cfg.child_chunk_size ?? gs.child_chunk_size),
+                  // Symbol
+                  useGlobalSymbolSeparator: cfg.symbol_separator == null,
+                  symbolSeparator: cfg.symbol_separator ?? gs.symbol_separator,
+                  // OCR
+                  useGlobalOcrEnabled: cfg.ocr_enabled == null,
+                  useGlobalOcrLanguage: cfg.ocr_language == null,
+                  ocrEnabled: cfg.ocr_enabled ?? gs.ocr_enabled,
+                  ocrLanguage: cfg.ocr_language ?? gs.ocr_language,
                 });
               }}
               onOpenSource={(source) => {
@@ -536,42 +580,190 @@ export default function NotebookWorkspacePage() {
 
       {sourceConfigModal ? (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded border p-4 w-[420px] space-y-3">
-            <p className="font-semibold">Настройки парсинга: {sourceConfigModal.source.filename}</p>
+          <div className="bg-white rounded border p-4 w-[460px] max-h-[90vh] overflow-y-auto space-y-3">
+            <p className="font-semibold text-sm">Настройки парсинга: {sourceConfigModal.source.filename}</p>
 
-            <div className="space-y-1 text-sm">
-              <label className="inline-flex items-center gap-2"><input type="checkbox" checked={sourceConfigModal.useGlobalChunkSize} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalChunkSize: e.target.checked }) : prev)} />Использовать глобальный chunk_size</label>
-              <input type="number" className="w-full rounded border p-1" disabled={sourceConfigModal.useGlobalChunkSize} value={sourceConfigModal.chunkSize} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, chunkSize: e.target.value }) : prev)} />
+            {/* Method */}
+            <div className="space-y-1 text-sm border-b pb-3">
+              <label className="inline-flex items-center gap-2">
+                <input type="checkbox" checked={sourceConfigModal.useGlobalMethod} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalMethod: e.target.checked }) : prev)} />
+                <span className="text-xs">Глобальный метод</span>
+              </label>
+              <select
+                className="w-full rounded border p-1 text-xs"
+                disabled={sourceConfigModal.useGlobalMethod}
+                value={sourceConfigModal.chunkingMethod}
+                onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, chunkingMethod: e.target.value }) : prev)}
+              >
+                {CHUNKING_METHODS.map((m) => (
+                  <option key={m} value={m}>{CHUNKING_METHOD_LABELS[m]}</option>
+                ))}
+              </select>
             </div>
 
-            <div className="space-y-1 text-sm">
-              <label className="inline-flex items-center gap-2"><input type="checkbox" checked={sourceConfigModal.useGlobalOverlap} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalOverlap: e.target.checked }) : prev)} />Использовать глобальный chunk_overlap</label>
-              <input type="number" className="w-full rounded border p-1" disabled={sourceConfigModal.useGlobalOverlap} value={sourceConfigModal.chunkOverlap} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, chunkOverlap: e.target.value }) : prev)} />
+            {/* Effective method for showing fields */}
+            {(() => {
+              const effectiveMethod = sourceConfigModal.useGlobalMethod
+                ? parsingSettings.data.chunking_method
+                : sourceConfigModal.chunkingMethod;
+
+              return (
+                <div className="space-y-2">
+                  {/* General & Context Enrichment: chunk_size + overlap */}
+                  {(effectiveMethod === 'general' || effectiveMethod === 'context_enrichment') && (
+                    <>
+                      <div className="space-y-1 text-xs">
+                        <label className="inline-flex items-center gap-2">
+                          <input type="checkbox" checked={sourceConfigModal.useGlobalChunkSize} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalChunkSize: e.target.checked }) : prev)} />
+                          Глобальный chunk size
+                        </label>
+                        <input type="number" className="w-full rounded border p-1" disabled={sourceConfigModal.useGlobalChunkSize} value={sourceConfigModal.chunkSize} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, chunkSize: e.target.value }) : prev)} />
+                      </div>
+                      <div className="space-y-1 text-xs">
+                        <label className="inline-flex items-center gap-2">
+                          <input type="checkbox" checked={sourceConfigModal.useGlobalOverlap} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalOverlap: e.target.checked }) : prev)} />
+                          Глобальный overlap
+                        </label>
+                        <input type="number" className="w-full rounded border p-1" disabled={sourceConfigModal.useGlobalOverlap} value={sourceConfigModal.chunkOverlap} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, chunkOverlap: e.target.value }) : prev)} />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Context Enrichment extras */}
+                  {effectiveMethod === 'context_enrichment' && (
+                    <>
+                      <div className="space-y-1 text-xs">
+                        <label className="inline-flex items-center gap-2">
+                          <input type="checkbox" checked={sourceConfigModal.useGlobalContextWindow} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalContextWindow: e.target.checked }) : prev)} />
+                          Глобальный context window
+                        </label>
+                        <input type="number" className="w-full rounded border p-1" disabled={sourceConfigModal.useGlobalContextWindow} value={sourceConfigModal.contextWindow} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, contextWindow: e.target.value }) : prev)} />
+                      </div>
+                      <div className="space-y-1 text-xs">
+                        <label className="inline-flex items-center gap-2">
+                          <input type="checkbox" checked={sourceConfigModal.useGlobalLlmSummary} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalLlmSummary: e.target.checked }) : prev)} />
+                          Глобальный LLM summary
+                        </label>
+                        <label className="inline-flex items-center gap-2 pl-6">
+                          <input type="checkbox" disabled={sourceConfigModal.useGlobalLlmSummary} checked={sourceConfigModal.useLlmSummary} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useLlmSummary: e.target.checked }) : prev)} />
+                          LLM-суммаризация
+                        </label>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Hierarchy */}
+                  {effectiveMethod === 'hierarchy' && (
+                    <>
+                      <div className="space-y-1 text-xs">
+                        <label className="inline-flex items-center gap-2">
+                          <input type="checkbox" checked={sourceConfigModal.useGlobalDocType} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalDocType: e.target.checked }) : prev)} />
+                          Глобальный тип документа
+                        </label>
+                        <select
+                          className="w-full rounded border p-1 text-xs"
+                          disabled={sourceConfigModal.useGlobalDocType}
+                          value={sourceConfigModal.docType}
+                          onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, docType: e.target.value }) : prev)}
+                        >
+                          {DOC_TYPES.map((t) => (
+                            <option key={t} value={t}>{DOC_TYPE_LABELS[t]}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1 text-xs">
+                        <label className="inline-flex items-center gap-2">
+                          <input type="checkbox" checked={sourceConfigModal.useGlobalChunkSize} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalChunkSize: e.target.checked }) : prev)} />
+                          Глобальный chunk size (fallback)
+                        </label>
+                        <input type="number" className="w-full rounded border p-1" disabled={sourceConfigModal.useGlobalChunkSize} value={sourceConfigModal.chunkSize} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, chunkSize: e.target.value }) : prev)} />
+                      </div>
+                    </>
+                  )}
+
+                  {/* PCR */}
+                  {effectiveMethod === 'pcr' && (
+                    <>
+                      <div className="space-y-1 text-xs">
+                        <label className="inline-flex items-center gap-2">
+                          <input type="checkbox" checked={sourceConfigModal.useGlobalParentChunkSize} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalParentChunkSize: e.target.checked }) : prev)} />
+                          Глобальный parent chunk size
+                        </label>
+                        <input type="number" className="w-full rounded border p-1" disabled={sourceConfigModal.useGlobalParentChunkSize} value={sourceConfigModal.parentChunkSize} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, parentChunkSize: e.target.value }) : prev)} />
+                      </div>
+                      <div className="space-y-1 text-xs">
+                        <label className="inline-flex items-center gap-2">
+                          <input type="checkbox" checked={sourceConfigModal.useGlobalChildChunkSize} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalChildChunkSize: e.target.checked }) : prev)} />
+                          Глобальный child chunk size
+                        </label>
+                        <input type="number" className="w-full rounded border p-1" disabled={sourceConfigModal.useGlobalChildChunkSize} value={sourceConfigModal.childChunkSize} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, childChunkSize: e.target.value }) : prev)} />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Symbol */}
+                  {effectiveMethod === 'symbol' && (
+                    <div className="space-y-1 text-xs">
+                      <label className="inline-flex items-center gap-2">
+                        <input type="checkbox" checked={sourceConfigModal.useGlobalSymbolSeparator} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalSymbolSeparator: e.target.checked }) : prev)} />
+                        Глобальный разделитель
+                      </label>
+                      <input
+                        className="w-full rounded border p-1 font-mono"
+                        disabled={sourceConfigModal.useGlobalSymbolSeparator}
+                        value={sourceConfigModal.symbolSeparator}
+                        onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, symbolSeparator: e.target.value }) : prev)}
+                        placeholder="---chunk---"
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* OCR settings */}
+            <div className="space-y-2 border-t pt-2">
+              <p className="text-xs text-slate-500 font-medium">OCR</p>
+              <div className="space-y-1 text-xs">
+                <label className="inline-flex items-center gap-2">
+                  <input type="checkbox" checked={sourceConfigModal.useGlobalOcrEnabled} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalOcrEnabled: e.target.checked }) : prev)} />
+                  Глобальный OCR enabled
+                </label>
+                <label className="inline-flex items-center gap-2 pl-6">
+                  <input type="checkbox" disabled={sourceConfigModal.useGlobalOcrEnabled} checked={sourceConfigModal.ocrEnabled} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, ocrEnabled: e.target.checked }) : prev)} />
+                  OCR включён
+                </label>
+              </div>
+              <div className="space-y-1 text-xs">
+                <label className="inline-flex items-center gap-2">
+                  <input type="checkbox" checked={sourceConfigModal.useGlobalOcrLanguage} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalOcrLanguage: e.target.checked }) : prev)} />
+                  Глобальный язык OCR
+                </label>
+                <input className="w-full rounded border p-1" disabled={sourceConfigModal.useGlobalOcrLanguage} value={sourceConfigModal.ocrLanguage} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, ocrLanguage: e.target.value }) : prev)} />
+              </div>
             </div>
 
-            <div className="space-y-1 text-sm">
-              <label className="inline-flex items-center gap-2"><input type="checkbox" checked={sourceConfigModal.useGlobalOcrEnabled} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalOcrEnabled: e.target.checked }) : prev)} />Использовать глобальный OCR enabled</label>
-              <label className="inline-flex items-center gap-2"><input type="checkbox" disabled={sourceConfigModal.useGlobalOcrEnabled} checked={sourceConfigModal.ocrEnabled} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, ocrEnabled: e.target.checked }) : prev)} />Включить OCR</label>
-            </div>
-
-            <div className="space-y-1 text-sm">
-              <label className="inline-flex items-center gap-2"><input type="checkbox" checked={sourceConfigModal.useGlobalOcrLanguage} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, useGlobalOcrLanguage: e.target.checked }) : prev)} />Использовать глобальный OCR language</label>
-              <input className="w-full rounded border p-1" disabled={sourceConfigModal.useGlobalOcrLanguage} value={sourceConfigModal.ocrLanguage} onChange={(e) => setSourceConfigModal((prev) => prev ? ({ ...prev, ocrLanguage: e.target.value }) : prev)} />
-            </div>
-
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2 pt-1">
               <button className="rounded border px-2 py-1 text-xs" onClick={() => setSourceConfigModal(null)}>Отмена</button>
               <button
-                className="rounded border px-2 py-1 text-xs"
+                className="rounded border border-blue-300 px-2 py-1 text-xs text-blue-700"
                 onClick={() => {
+                  const m = sourceConfigModal;
                   updateSource.mutate({
-                    sourceId: sourceConfigModal.source.id,
+                    sourceId: m.source.id,
                     payload: {
                       individual_config: {
-                        chunk_size: sourceConfigModal.useGlobalChunkSize ? null : Number(sourceConfigModal.chunkSize),
-                        chunk_overlap: sourceConfigModal.useGlobalOverlap ? null : Number(sourceConfigModal.chunkOverlap),
-                        ocr_enabled: sourceConfigModal.useGlobalOcrEnabled ? null : sourceConfigModal.ocrEnabled,
-                        ocr_language: sourceConfigModal.useGlobalOcrLanguage ? null : sourceConfigModal.ocrLanguage,
+                        chunking_method: m.useGlobalMethod ? null : m.chunkingMethod,
+                        chunk_size: m.useGlobalChunkSize ? null : Number(m.chunkSize),
+                        chunk_overlap: m.useGlobalOverlap ? null : Number(m.chunkOverlap),
+                        context_window: m.useGlobalContextWindow ? null : Number(m.contextWindow),
+                        use_llm_summary: m.useGlobalLlmSummary ? null : m.useLlmSummary,
+                        doc_type: m.useGlobalDocType ? null : m.docType,
+                        parent_chunk_size: m.useGlobalParentChunkSize ? null : Number(m.parentChunkSize),
+                        child_chunk_size: m.useGlobalChildChunkSize ? null : Number(m.childChunkSize),
+                        symbol_separator: m.useGlobalSymbolSeparator ? null : m.symbolSeparator,
+                        ocr_enabled: m.useGlobalOcrEnabled ? null : m.ocrEnabled,
+                        ocr_language: m.useGlobalOcrLanguage ? null : m.ocrLanguage,
                       },
                     },
                   });

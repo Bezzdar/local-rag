@@ -43,6 +43,13 @@ class Source(BaseModel):
             "chunk_overlap": None,
             "ocr_enabled": None,
             "ocr_language": None,
+            "chunking_method": None,
+            "context_window": None,
+            "use_llm_summary": None,
+            "doc_type": None,
+            "parent_chunk_size": None,
+            "child_chunk_size": None,
+            "symbol_separator": None,
         }
     )
 
@@ -54,6 +61,18 @@ class ParsingSettings(BaseModel):
     ocr_enabled: bool = True
     ocr_language: str = "rus+eng"
     auto_parse_on_upload: bool = False
+    # Chunking method
+    chunking_method: str = "general"
+    # Context Enrichment params
+    context_window: int = 128
+    use_llm_summary: bool = False
+    # Hierarchy params
+    doc_type: str = "technical_manual"
+    # PCR params
+    parent_chunk_size: int = 1024
+    child_chunk_size: int = 128
+    # Symbol params
+    symbol_separator: str = "---chunk---"
 
 
 class ChatMessage(BaseModel):
