@@ -8,7 +8,7 @@ import { api, CitationsSchema } from '@/lib/api';
 import { logClientEvent } from '@/lib/clientLogger';
 import { ChatMode, openChatStream } from '@/lib/sse';
 import { getRuntimeConfig } from '@/lib/runtime-config';
-import { Citation, Source } from '@/types/dto';
+import { Citation, GlobalNote, SavedCitation, Source } from '@/types/dto';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -67,6 +67,24 @@ export default function NotebookWorkspacePage() {
   const notes = useQuery({ queryKey: ['notes', notebookId], queryFn: () => api.listNotes(notebookId), enabled: allowNotebookQueries });
   const parsingSettings = useQuery({ queryKey: ['parsing-settings', notebookId], queryFn: () => api.getParsingSettings(notebookId), enabled: allowNotebookQueries });
 
+  // Persistent saved citations (per-notebook)
+  const savedCitations = useQuery({
+    queryKey: ['saved-citations', notebookId],
+    queryFn: () => api.listSavedCitations(notebookId),
+    enabled: allowNotebookQueries,
+  });
+
+  // Global notes (cross-notebook)
+  const globalNotes = useQuery({
+    queryKey: ['global-notes'],
+    queryFn: () => api.listGlobalNotes(),
+    enabled: allowNotebookQueries,
+  });
+
+  const activeNotebook = useMemo(
+    () => notebooks.data?.find((nb) => nb.id === notebookId),
+    [notebooks.data, notebookId],
+  );
 
   const uploadSource = useMutation({
     mutationFn: (file: File) => api.uploadSource(notebookId, file),
@@ -75,7 +93,10 @@ export default function NotebookWorkspacePage() {
 
   const deleteSources = useMutation({
     mutationFn: (sourceIds: string[]) => Promise.all(sourceIds.map((sourceId) => api.deleteSource(sourceId))),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sources', notebookId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sources', notebookId] });
+      queryClient.invalidateQueries({ queryKey: ['saved-citations', notebookId] });
+    },
   });
 
   const eraseSource = useMutation({
@@ -93,9 +114,56 @@ export default function NotebookWorkspacePage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sources', notebookId] }),
   });
 
+  const openSource = useMutation({
+    mutationFn: (sourceId: string) => api.openSource(sourceId),
+  });
+
+  const reorderSources = useMutation({
+    mutationFn: (orderedIds: string[]) => api.reorderSources(notebookId, orderedIds),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sources', notebookId] }),
+  });
+
   const createNote = useMutation({
     mutationFn: ({ title, content }: { title: string; content: string }) => api.createNote(notebookId, title, content),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notes', notebookId] }),
+  });
+
+  const saveCitation = useMutation({
+    mutationFn: (citation: Citation) =>
+      api.saveCitation(notebookId, {
+        source_id: citation.source_id,
+        filename: citation.filename,
+        doc_order: citation.doc_order,
+        chunk_text: citation.snippet,
+        page: citation.location?.page ?? null,
+        sheet: citation.location?.sheet ?? null,
+        source_notebook_id: notebookId,
+        source_type: 'notebook',
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['saved-citations', notebookId] });
+    },
+  });
+
+  const deleteSavedCitation = useMutation({
+    mutationFn: (citationId: string) => api.deleteSavedCitation(notebookId, citationId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['saved-citations', notebookId] }),
+  });
+
+  const saveGlobalNote = useMutation({
+    mutationFn: (content: string) =>
+      api.createGlobalNote({
+        content,
+        source_notebook_id: notebookId,
+        source_notebook_title: activeNotebook?.title ?? 'Ноутбук',
+        source_refs: citations.map((c) => ({ source_id: c.source_id, doc_order: c.doc_order, filename: c.filename })),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['global-notes'] }),
+  });
+
+  const deleteGlobalNote = useMutation({
+    mutationFn: (noteId: string) => api.deleteGlobalNote(noteId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['global-notes'] }),
   });
 
   const clearChat = useMutation({
@@ -262,6 +330,16 @@ export default function NotebookWorkspacePage() {
     });
   };
 
+  const handleCitationClick = (citation: Citation) => {
+    logClientEvent({ event: 'ui.citation.save', notebookId, metadata: { source_id: citation.source_id, doc_order: citation.doc_order } });
+    saveCitation.mutate(citation);
+  };
+
+  const handleSaveToNotes = (content: string) => {
+    logClientEvent({ event: 'ui.note.save_global', notebookId });
+    saveGlobalNote.mutate(content);
+  };
+
   const startResize = (side: 'left' | 'right') => {
     const handleMove = (event: MouseEvent) => {
       if (side === 'left') {
@@ -369,6 +447,14 @@ export default function NotebookWorkspacePage() {
                   ocrLanguage: source.individual_config?.ocr_language ?? parsingSettings.data.ocr_language,
                 });
               }}
+              onOpenSource={(source) => {
+                logClientEvent({ event: 'ui.source.open', notebookId, metadata: { sourceId: source.id, filename: source.filename } });
+                openSource.mutate(source.id);
+              }}
+              onReorderSources={(orderedIds) => {
+                logClientEvent({ event: 'ui.sources.reorder', notebookId, metadata: { count: orderedIds.length } });
+                reorderSources.mutate(orderedIds);
+              }}
             />
           ) : null}
         </div>
@@ -400,7 +486,8 @@ export default function NotebookWorkspacePage() {
             logClientEvent({ event: 'ui.clear_chat.confirmed', notebookId });
             clearChat.mutate();
           }}
-          onSaveToNotes={(content) => { logClientEvent({ event: 'ui.note.save_from_chat', notebookId }); createNote.mutate({ title: 'Из чата', content }); }}
+          onSaveToNotes={handleSaveToNotes}
+          onCitationClick={handleCitationClick}
         />
 
         <div
@@ -425,7 +512,19 @@ export default function NotebookWorkspacePage() {
           </div>
           {!rightCollapsed ? (
             <div className="h-full overflow-auto p-3 space-y-3">
-              <EvidencePanel citations={citations} notes={notes.data} sources={sources.data} />
+              <EvidencePanel
+                savedCitations={savedCitations.data ?? []}
+                globalNotes={globalNotes.data ?? []}
+                sources={sources.data}
+                onDeleteCitation={(citation: SavedCitation) => {
+                  logClientEvent({ event: 'ui.citation.delete', notebookId, metadata: { id: citation.id } });
+                  deleteSavedCitation.mutate(citation.id);
+                }}
+                onDeleteNote={(note: GlobalNote) => {
+                  logClientEvent({ event: 'ui.note.delete', notebookId, metadata: { id: note.id } });
+                  deleteGlobalNote.mutate(note.id);
+                }}
+              />
             </div>
           ) : null}
         </div>

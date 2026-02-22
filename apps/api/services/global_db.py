@@ -40,6 +40,11 @@ class GlobalDB:
                 self._conn.commit()
             except Exception:
                 pass  # Column already exists
+            try:
+                self._conn.execute("ALTER TABLE sources ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+                self._conn.commit()
+            except Exception:
+                pass  # Column already exists
             self._conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS notebooks (
@@ -64,7 +69,8 @@ class GlobalDB:
                     has_base INTEGER NOT NULL DEFAULT 0,
                     embeddings_status TEXT NOT NULL DEFAULT 'unavailable',
                     index_warning TEXT,
-                    individual_config TEXT
+                    individual_config TEXT,
+                    sort_order INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS parsing_settings (
@@ -112,8 +118,8 @@ class GlobalDB:
                 """
                 INSERT INTO sources (
                     id, notebook_id, filename, file_path, file_type, size_bytes, status,
-                    added_at, is_enabled, has_docs, has_parsing, has_base, embeddings_status, index_warning, individual_config
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    added_at, is_enabled, has_docs, has_parsing, has_base, embeddings_status, index_warning, individual_config, sort_order
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     filename=excluded.filename, file_path=excluded.file_path,
                     file_type=excluded.file_type, size_bytes=excluded.size_bytes,
@@ -121,7 +127,8 @@ class GlobalDB:
                     has_docs=excluded.has_docs, has_parsing=excluded.has_parsing,
                     has_base=excluded.has_base,
                     embeddings_status=excluded.embeddings_status,
-                    index_warning=excluded.index_warning, individual_config=excluded.individual_config
+                    index_warning=excluded.index_warning, individual_config=excluded.individual_config,
+                    sort_order=excluded.sort_order
                 """,
                 (
                     src["id"],
@@ -139,8 +146,39 @@ class GlobalDB:
                     src.get("embeddings_status", "unavailable"),
                     src.get("index_warning"),
                     indiv_json,
+                    src.get("sort_order", 0),
                 ),
             )
+            self._conn.commit()
+
+    def get_max_sort_order(self, notebook_id: str) -> int:
+        """Return the current maximum sort_order for sources in a notebook."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT MAX(sort_order) FROM sources WHERE notebook_id=?", (notebook_id,)
+            ).fetchone()
+        val = row[0] if row and row[0] is not None else 0
+        return int(val)
+
+    def reorder_sources(self, notebook_id: str, ordered_ids: list[str]) -> None:
+        """Set sort_order for sources in notebook according to the given ordered list of IDs."""
+        with self._lock:
+            for idx, source_id in enumerate(ordered_ids, start=1):
+                self._conn.execute(
+                    "UPDATE sources SET sort_order=? WHERE id=? AND notebook_id=?",
+                    (idx, source_id, notebook_id),
+                )
+            self._conn.commit()
+
+    def renumber_sort_orders(self, notebook_id: str) -> None:
+        """Re-assign sequential sort_orders (1..N) to remaining sources after a deletion."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id FROM sources WHERE notebook_id=? ORDER BY sort_order, added_at",
+                (notebook_id,),
+            ).fetchall()
+            for idx, row in enumerate(rows, start=1):
+                self._conn.execute("UPDATE sources SET sort_order=? WHERE id=?", (idx, row[0]))
             self._conn.commit()
 
     def load_all_sources(self) -> list[dict[str, Any]]:
@@ -151,7 +189,7 @@ class GlobalDB:
             "ocr_language": None,
         }
         with self._lock:
-            rows = self._conn.execute("SELECT * FROM sources ORDER BY added_at").fetchall()
+            rows = self._conn.execute("SELECT * FROM sources ORDER BY sort_order, added_at").fetchall()
         result: list[dict[str, Any]] = []
         for row in rows:
             d = dict(row)
@@ -167,6 +205,7 @@ class GlobalDB:
             d["has_docs"] = bool(d["has_docs"])
             d["has_parsing"] = bool(d["has_parsing"])
             d["has_base"] = bool(d.get("has_base", 0))
+            d["sort_order"] = int(d.get("sort_order") or 0)
             result.append(d)
         return result
 

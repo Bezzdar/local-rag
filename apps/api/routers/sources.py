@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -12,7 +14,7 @@ from fastapi.responses import FileResponse
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from ..config import DOCS_DIR, UPLOAD_MAX_BYTES
-from ..schemas import AddPathRequest, Source, UpdateSourceRequest
+from ..schemas import AddPathRequest, ReorderSourcesRequest, Source, UpdateSourceRequest
 from ..store import store
 
 router = APIRouter(prefix="/api", tags=["sources"])
@@ -115,7 +117,8 @@ async def _save_multipart_file_stream(request: Request, notebook_id: str) -> tup
 @router.get("/notebooks/{notebook_id}/sources", response_model=list[Source])
 def list_sources(notebook_id: str) -> list[Source]:
     _ensure_notebook_exists(notebook_id)
-    return [source for source in store.sources.values() if source.notebook_id == notebook_id]
+    sources = [source for source in store.sources.values() if source.notebook_id == notebook_id]
+    return sorted(sources, key=lambda s: (s.sort_order, s.added_at))
 
 
 @router.post("/notebooks/{notebook_id}/sources/upload", response_model=Source)
@@ -141,6 +144,14 @@ async def upload_source(notebook_id: str, request: Request) -> Source:
 def add_path(notebook_id: str, payload: AddPathRequest) -> Source:
     _ensure_notebook_exists(notebook_id)
     return store.add_source_from_path(notebook_id, payload.path)
+
+
+@router.patch("/notebooks/{notebook_id}/sources/reorder", status_code=204, response_class=Response)
+def reorder_sources(notebook_id: str, payload: ReorderSourcesRequest) -> Response:
+    _ensure_notebook_exists(notebook_id)
+    if not store.reorder_sources(notebook_id, payload.ordered_ids):
+        raise HTTPException(status_code=400, detail="Invalid source IDs for reorder")
+    return Response(status_code=204)
 
 
 @router.patch("/sources/{source_id}", response_model=Source)
@@ -175,6 +186,27 @@ def reparse_source(source_id: str) -> Source:
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
     return source
+
+
+@router.post("/sources/{source_id}/open", status_code=204, response_class=Response)
+def open_source(source_id: str) -> Response:
+    """Open the source file using the OS default application."""
+    source = store.sources.get(source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    file_path = Path(source.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    try:
+        if sys.platform == "win32":
+            os.startfile(str(file_path))  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(file_path)])
+        else:
+            subprocess.Popen(["xdg-open", str(file_path)])
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to open file: {exc}") from exc
+    return Response(status_code=204)
 
 
 @router.delete("/sources/{source_id}/erase", status_code=204, response_class=Response)

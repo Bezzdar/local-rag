@@ -24,16 +24,19 @@ def to_sse(event: str, payload: object) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-def _to_citation(notebook_id: str, chunk: dict) -> Citation:
+def _to_citation(notebook_id: str, chunk: dict, source_order_map: dict[str, int]) -> Citation:
     filename, page, section = chunk_to_citation_fields(chunk)
+    source_id = chunk.get("source_id", "unknown")
+    doc_order = source_order_map.get(source_id, 0)
     return Citation(
         id=str(uuid4()),
         notebook_id=notebook_id,
-        source_id=chunk.get("source_id", "unknown"),
+        source_id=source_id,
         filename=filename,
         location=CitationLocation(page=page, sheet=section, paragraph=None),
         snippet=chunk.get("text", "")[:280],
         score=0.9,
+        doc_order=doc_order,
     )
 
 
@@ -59,11 +62,12 @@ async def chat(payload: ChatRequest) -> ChatResponse:
         if do_retrieval
         else []
     )
-    citations = [_to_citation(payload.notebook_id, item) for item in chunks]
+    source_order_map = store.get_source_order_map(payload.notebook_id)
+    citations = [_to_citation(payload.notebook_id, item, source_order_map) for item in chunks]
 
     if mode == "model":
         history = build_chat_history(store.messages.get(payload.notebook_id, []))
-        rag_context = build_rag_context(chunks)
+        rag_context = build_rag_context(chunks, source_order_map)
         response_text = await generate_model_answer(
             provider=payload.provider,
             base_url=payload.base_url,
@@ -116,11 +120,12 @@ async def chat_stream(
             if do_retrieval
             else []
         )
-        citations = [_to_citation(notebook_id, item) for item in chunks]
+        source_order_map = store.get_source_order_map(notebook_id)
+        citations = [_to_citation(notebook_id, item, source_order_map) for item in chunks]
 
         if normalized_mode == "model":
             history = build_chat_history(store.messages.get(notebook_id, []), limit=max_history)
-            rag_context = build_rag_context(chunks)
+            rag_context = build_rag_context(chunks, source_order_map)
             assembled = []
             try:
                 async for token in stream_model_answer(

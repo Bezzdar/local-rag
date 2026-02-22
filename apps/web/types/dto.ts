@@ -20,6 +20,7 @@ export const SourceSchema = z.object({
   has_docs: z.boolean().optional(),
   has_parsing: z.boolean().optional(),
   has_base: z.boolean().optional(),
+  sort_order: z.number().default(0),
   individual_config: z
     .object({
       chunk_size: z.number().nullable(),
@@ -50,6 +51,33 @@ export const CitationSchema = z.object({
   }),
   snippet: z.string(),
   score: z.number(),
+  doc_order: z.number().default(0),
+});
+
+export const SavedCitationSchema = z.object({
+  id: z.string(),
+  notebook_id: z.string(),
+  source_id: z.string(),
+  filename: z.string(),
+  doc_order: z.number(),
+  chunk_text: z.string(),
+  location: z.object({
+    page: z.number().nullish(),
+    sheet: z.string().nullish(),
+    paragraph: z.number().nullish(),
+  }),
+  created_at: z.string(),
+  source_notebook_id: z.string(),
+  source_type: z.string().default('notebook'),
+});
+
+export const GlobalNoteSchema = z.object({
+  id: z.string(),
+  content: z.string(),
+  source_notebook_id: z.string(),
+  source_notebook_title: z.string(),
+  created_at: z.string(),
+  source_refs: z.array(z.record(z.union([z.string(), z.number()]))).default([]),
 });
 
 export const NoteSchema = z.object({
@@ -64,6 +92,8 @@ export type Notebook = z.infer<typeof NotebookSchema>;
 export type Source = z.infer<typeof SourceSchema>;
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export type Citation = z.infer<typeof CitationSchema>;
+export type SavedCitation = z.infer<typeof SavedCitationSchema>;
+export type GlobalNote = z.infer<typeof GlobalNoteSchema>;
 export type Note = z.infer<typeof NoteSchema>;
 
 

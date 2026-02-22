@@ -4,14 +4,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import threading
 from pathlib import Path
 from uuid import uuid4
 
-from .config import CHUNKS_DIR, DOCS_DIR, NOTEBOOKS_DB_DIR, EMBEDDING_BASE_URL, EMBEDDING_DIM, EMBEDDING_ENABLED, EMBEDDING_ENDPOINT, EMBEDDING_PROVIDER
-from .schemas import ChatMessage, Note, Notebook, ParsingSettings, Source, now_iso
+from .config import CHUNKS_DIR, CITATIONS_DIR, DOCS_DIR, NOTES_DIR, NOTEBOOKS_DB_DIR, EMBEDDING_BASE_URL, EMBEDDING_DIM, EMBEDDING_ENABLED, EMBEDDING_ENDPOINT, EMBEDDING_PROVIDER
+from .schemas import ChatMessage, GlobalNote, Note, Notebook, ParsingSettings, SavedCitation, Source, CitationLocation, now_iso
 from .services.global_db import GlobalDB
 from .services.index_service import index_source
 from .services.embedding_service import EmbeddingConfig, EmbeddingEngine, EmbeddingProviderConfig
@@ -20,6 +21,8 @@ from .services.notebook_db import db_for_notebook
 DOCS_DIR.mkdir(parents=True, exist_ok=True)
 CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
 NOTEBOOKS_DB_DIR.mkdir(parents=True, exist_ok=True)
+CITATIONS_DIR.mkdir(parents=True, exist_ok=True)
+NOTES_DIR.mkdir(parents=True, exist_ok=True)
 
 DEMO_NOTEBOOK_ID = "00000000-0000-0000-0000-000000000001"
 
@@ -155,6 +158,14 @@ class InMemoryStore:
             counter += 1
         return candidate
 
+    def get_source_order_map(self, notebook_id: str) -> dict[str, int]:
+        """Return mapping of source_id → sequential display number (1-based) for the notebook."""
+        nb_sources = sorted(
+            [s for s in self.sources.values() if s.notebook_id == notebook_id],
+            key=lambda s: (s.sort_order, s.added_at),
+        )
+        return {s.id: idx for idx, s in enumerate(nb_sources, start=1)}
+
     def create_notebook(self, title: str) -> Notebook:
         ts = now_iso()
         notebook = Notebook(id=str(uuid4()), title=title, created_at=ts, updated_at=ts)
@@ -204,6 +215,13 @@ class InMemoryStore:
                         file.unlink(missing_ok=True)
                 directory.rmdir()
 
+        # Delete citations for this notebook
+        citations_dir = CITATIONS_DIR / notebook_id
+        if citations_dir.exists():
+            for f in citations_dir.glob("*.json"):
+                f.unlink(missing_ok=True)
+            citations_dir.rmdir()
+
         (NOTEBOOKS_DB_DIR / f"{notebook_id}.db").unlink(missing_ok=True)
 
         del self.notebooks[notebook_id]
@@ -220,6 +238,8 @@ class InMemoryStore:
         file_type = ext if ext in {"pdf", "docx", "xlsx"} else "other"
         settings = self.get_parsing_settings(notebook_id)
         should_index = indexed or settings.auto_parse_on_upload
+        # Compute next sort_order for this notebook
+        next_order = _global_db.get_max_sort_order(notebook_id) + 1
         source = Source(
             id=str(uuid4()),
             notebook_id=notebook_id,
@@ -231,6 +251,7 @@ class InMemoryStore:
             added_at=now_iso(),
             has_docs=file_path.exists(),
             has_parsing=indexed,
+            sort_order=next_order,
         )
         self.sources[source.id] = source
         _global_db.upsert_source(source.model_dump())
@@ -312,11 +333,25 @@ class InMemoryStore:
         thread.start()
         return source
 
+    def reorder_sources(self, notebook_id: str, ordered_ids: list[str]) -> bool:
+        """Update sort_order for sources in notebook based on user-provided order."""
+        # Validate all IDs belong to this notebook
+        nb_sources = {s.id for s in self.sources.values() if s.notebook_id == notebook_id}
+        if not all(sid in nb_sources for sid in ordered_ids):
+            return False
+        _global_db.reorder_sources(notebook_id, ordered_ids)
+        # Update in-memory sort_orders
+        for idx, source_id in enumerate(ordered_ids, start=1):
+            if source_id in self.sources:
+                self.sources[source_id].sort_order = idx
+        return True
+
     def delete_source_fully(self, source_id: str) -> bool:
         """Delete source completely: file, parsing/chunks, DB records, and in-memory entry."""
         source = self.sources.get(source_id)
         if not source:
             return False
+        notebook_id = source.notebook_id
         # Delete physical file
         path = Path(source.file_path)
         if path.exists() and path.is_file():
@@ -335,6 +370,17 @@ class InMemoryStore:
         # Remove from global DB and in-memory store
         _global_db.delete_source(source_id)
         self.sources.pop(source_id, None)
+        # Renumber remaining sources
+        _global_db.renumber_sort_orders(notebook_id)
+        # Reload sort_orders in memory
+        remaining = sorted(
+            [s for s in self.sources.values() if s.notebook_id == notebook_id],
+            key=lambda s: (s.sort_order, s.added_at),
+        )
+        for idx, s in enumerate(remaining, start=1):
+            s.sort_order = idx
+        # Delete saved citations for this source
+        self._delete_citations_for_source(notebook_id, source_id)
         return True
 
     def delete_source_file(self, source_id: str) -> bool:
@@ -464,6 +510,7 @@ class InMemoryStore:
                 embeddings_status=src.embeddings_status,
                 index_warning=src.index_warning,
                 individual_config=dict(src.individual_config),
+                sort_order=src.sort_order,
             )
             self.sources[new_src_id] = new_source
             _global_db.upsert_source(new_source.model_dump())
@@ -524,6 +571,117 @@ class InMemoryStore:
         note = Note(id=str(uuid4()), notebook_id=notebook_id, title=title, content=content, created_at=now_iso())
         self.notes.setdefault(notebook_id, []).append(note)
         return note
+
+    # --- Saved Citations (persistent, per-notebook) ---
+
+    def _citation_path(self, notebook_id: str, citation_id: str) -> Path:
+        return CITATIONS_DIR / notebook_id / f"{citation_id}.json"
+
+    def list_saved_citations(self, notebook_id: str) -> list[SavedCitation]:
+        nb_dir = CITATIONS_DIR / notebook_id
+        if not nb_dir.exists():
+            return []
+        results = []
+        for f in sorted(nb_dir.glob("*.json")):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                results.append(SavedCitation(**data))
+            except Exception:
+                logger.exception("Failed to load citation file %s", f)
+        results.sort(key=lambda c: c.created_at)
+        return results
+
+    def save_citation(
+        self,
+        notebook_id: str,
+        source_id: str,
+        filename: str,
+        doc_order: int,
+        chunk_text: str,
+        page: int | None,
+        sheet: str | None,
+        source_notebook_id: str,
+        source_type: str = "notebook",
+    ) -> SavedCitation:
+        citation = SavedCitation(
+            id=str(uuid4()),
+            notebook_id=notebook_id,
+            source_id=source_id,
+            filename=filename,
+            doc_order=doc_order,
+            chunk_text=chunk_text,
+            location=CitationLocation(page=page, sheet=sheet),
+            created_at=now_iso(),
+            source_notebook_id=source_notebook_id,
+            source_type=source_type,
+        )
+        nb_dir = CITATIONS_DIR / notebook_id
+        nb_dir.mkdir(parents=True, exist_ok=True)
+        self._citation_path(notebook_id, citation.id).write_text(
+            citation.model_dump_json(indent=2), encoding="utf-8"
+        )
+        return citation
+
+    def delete_saved_citation(self, notebook_id: str, citation_id: str) -> bool:
+        path = self._citation_path(notebook_id, citation_id)
+        if path.exists():
+            path.unlink(missing_ok=True)
+            return True
+        return False
+
+    def _delete_citations_for_source(self, notebook_id: str, source_id: str) -> None:
+        """Remove all saved citations referencing a deleted source."""
+        nb_dir = CITATIONS_DIR / notebook_id
+        if not nb_dir.exists():
+            return
+        for f in nb_dir.glob("*.json"):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                if data.get("source_id") == source_id:
+                    f.unlink(missing_ok=True)
+            except Exception:
+                logger.exception("Failed to check citation file %s", f)
+
+    # --- Global Notes (persistent, cross-notebook) ---
+
+    def _note_path(self, note_id: str) -> Path:
+        return NOTES_DIR / f"{note_id}.json"
+
+    def list_global_notes(self) -> list[GlobalNote]:
+        results = []
+        for f in sorted(NOTES_DIR.glob("*.json")):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                results.append(GlobalNote(**data))
+            except Exception:
+                logger.exception("Failed to load note file %s", f)
+        results.sort(key=lambda n: n.created_at)
+        return results
+
+    def save_global_note(
+        self,
+        content: str,
+        source_notebook_id: str,
+        source_notebook_title: str,
+        source_refs: list[dict] | None = None,
+    ) -> GlobalNote:
+        note = GlobalNote(
+            id=str(uuid4()),
+            content=content,
+            source_notebook_id=source_notebook_id,
+            source_notebook_title=source_notebook_title,
+            created_at=now_iso(),
+            source_refs=source_refs or [],
+        )
+        self._note_path(note.id).write_text(note.model_dump_json(indent=2), encoding="utf-8")
+        return note
+
+    def delete_global_note(self, note_id: str) -> bool:
+        path = self._note_path(note_id)
+        if path.exists():
+            path.unlink(missing_ok=True)
+            return True
+        return False
 
 
 store = InMemoryStore()

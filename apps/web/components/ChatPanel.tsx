@@ -3,7 +3,7 @@
 import { logClientEvent } from '@/lib/clientLogger';
 import { ChatMessage, Citation, AgentManifest } from '@/types/dto';
 import { CHAT_MODE_OPTIONS, ChatMode } from '@/lib/sse';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 type Props = {
   notebookId: string;
@@ -22,7 +22,84 @@ type Props = {
   onSend: (text: string) => void;
   onClearChat: () => void;
   onSaveToNotes: (text: string) => void;
+  onCitationClick: (citation: Citation) => void;
 };
+
+/**
+ * Parse text containing [N] references and return an array of segments.
+ * Each segment is either a plain string or a citation reference number.
+ */
+function parseTextWithCitations(text: string): Array<{ type: 'text'; content: string } | { type: 'ref'; num: number }> {
+  const parts: Array<{ type: 'text'; content: string } | { type: 'ref'; num: number }> = [];
+  const regex = /\[(\d+)\]/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: 'text', content: text.slice(lastIndex, match.index) });
+    }
+    parts.push({ type: 'ref', num: parseInt(match[1], 10) });
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push({ type: 'text', content: text.slice(lastIndex) });
+  }
+
+  return parts;
+}
+
+type CitationRefProps = {
+  num: number;
+  citations: Citation[];
+  onClick: (citation: Citation) => void;
+};
+
+function CitationRef({ num, citations, onClick }: CitationRefProps) {
+  const citation = useMemo(
+    () => citations.find((c) => c.doc_order === num),
+    [citations, num],
+  );
+
+  if (!citation) {
+    // No matching citation in current response — show as plain text
+    return <span className="text-slate-500">[{num}]</span>;
+  }
+
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center justify-center w-6 h-5 rounded bg-blue-600 text-white text-xs font-bold font-mono hover:bg-blue-700 active:bg-blue-800 transition-colors mx-0.5 align-baseline"
+      title={`Сохранить цитату из «${citation.filename}» во вкладку Цитаты`}
+      onClick={() => onClick(citation)}
+    >
+      {num}
+    </button>
+  );
+}
+
+type MessageTextProps = {
+  text: string;
+  citations: Citation[];
+  onCitationClick: (citation: Citation) => void;
+};
+
+function MessageText({ text, citations, onCitationClick }: MessageTextProps) {
+  const segments = useMemo(() => parseTextWithCitations(text), [text]);
+
+  return (
+    <span className="whitespace-pre-wrap">
+      {segments.map((seg, idx) =>
+        seg.type === 'text' ? (
+          <span key={idx}>{seg.content}</span>
+        ) : (
+          <CitationRef key={idx} num={seg.num} citations={citations} onClick={onCitationClick} />
+        ),
+      )}
+    </span>
+  );
+}
 
 export default function ChatPanel(props: Props) {
   const [input, setInput] = useState('');
@@ -84,10 +161,42 @@ export default function ChatPanel(props: Props) {
             key={message.id}
             className={`rounded border p-3 text-sm ${message.role === 'assistant' ? 'bg-white border-slate-200' : 'bg-blue-50 border-blue-200'}`}
           >
-            {message.content}
+            {message.role === 'assistant' ? (
+              <div className="space-y-1">
+                <MessageText
+                  text={message.content}
+                  citations={props.citations}
+                  onCitationClick={props.onCitationClick}
+                />
+                {/* Save-to-notes button under each assistant message */}
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    className="text-slate-400 hover:text-slate-600 transition-colors"
+                    title="Сохранить ответ в Заметки"
+                    onClick={() => {
+                      logClientEvent({ event: 'ui.save_to_notes.message', notebookId: props.notebookId });
+                      props.onSaveToNotes(message.content);
+                    }}
+                  >
+                    ↳
+                  </button>
+                </div>
+              </div>
+            ) : (
+              message.content
+            )}
           </div>
         ))}
-        {props.streaming ? <div className="rounded border border-slate-200 bg-white p-3 text-sm whitespace-pre-wrap">{props.streaming}</div> : null}
+        {props.streaming ? (
+          <div className="rounded border border-slate-200 bg-white p-3 text-sm">
+            <MessageText
+              text={props.streaming}
+              citations={props.citations}
+              onCitationClick={props.onCitationClick}
+            />
+          </div>
+        ) : null}
       </div>
 
       <div className="flex gap-2">
@@ -96,6 +205,17 @@ export default function ChatPanel(props: Props) {
           placeholder="Спросите по технической документации..."
           value={input}
           onChange={(event) => setInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              const text = input.trim();
+              if (text && !props.disableSend) {
+                logClientEvent({ event: 'ui.send.click', notebookId: props.notebookId, metadata: { length: text.length, mode: props.mode } });
+                props.onSend(text);
+                setInput('');
+              }
+            }
+          }}
         />
         <button
           className="rounded bg-slate-900 px-4 text-white disabled:cursor-not-allowed disabled:opacity-50"
@@ -124,8 +244,8 @@ export default function ChatPanel(props: Props) {
           <button className="rounded border px-2 py-1" onClick={() => {
             logClientEvent({ event: 'ui.save_to_notes.click', notebookId: props.notebookId, metadata: { length: props.streaming.length } });
             props.onSaveToNotes(props.streaming);
-          }}>Save to Notes</button>
-          <span className="text-slate-500">Citations: {props.citations.length}</span>
+          }}>Сохранить в Заметки</button>
+          <span className="text-slate-500">Источников: {props.citations.length}</span>
         </div>
       ) : null}
     </section>
