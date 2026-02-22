@@ -220,7 +220,7 @@ export default function ChatPanel(props: Props) {
         <button
           className="rounded bg-slate-900 px-4 text-white disabled:cursor-not-allowed disabled:opacity-50"
           disabled={props.disableSend}
-          title={props.disableSend ? props.sendDisabledReason ?? 'Действие временно недоступно…' : undefined}
+          title={props.disableSend ? props.sendDisabledReason ?? 'Действие временно недоступно…' : 'Enter — Отправить\nShift + Enter — Перенос строки'}
           onClick={() => {
             const text = input.trim();
             if (!text || props.disableSend) {
