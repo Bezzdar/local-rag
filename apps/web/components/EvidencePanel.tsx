@@ -1,8 +1,7 @@
 'use client';
 
 import { GlobalNote, SavedCitation, Source } from '@/types/dto';
-import { useMemo, useState } from 'react';
-import DocPreview from './DocPreview';
+import { useState } from 'react';
 
 type Props = {
   savedCitations: SavedCitation[];
@@ -10,16 +9,11 @@ type Props = {
   sources: Source[];
   onDeleteCitation: (citation: SavedCitation) => void;
   onDeleteNote: (note: GlobalNote) => void;
+  onOpenSource: (sourceId: string) => void;
 };
 
 export default function EvidencePanel(props: Props) {
   const [tab, setTab] = useState<'citations' | 'notes'>('citations');
-  const [activeSourceId, setActiveSourceId] = useState<string | null>(null);
-
-  const activeSource = useMemo(
-    () => props.sources.find((source) => source.id === activeSourceId) ?? null,
-    [props.sources, activeSourceId],
-  );
 
   return (
     <aside className="w-full h-full border-l border-slate-200 bg-white p-4 space-y-3">
@@ -71,11 +65,11 @@ export default function EvidencePanel(props: Props) {
               <p className="text-xs text-slate-400">
                 Источник: {citation.source_type === 'notebook' ? 'Ноутбук' : 'БД'} · {citation.source_notebook_id.slice(0, 8)}…
               </p>
-              {/* Show file preview on click */}
+              {/* Open document with OS default application */}
               <button
                 type="button"
                 className="text-xs text-blue-600 hover:underline"
-                onClick={() => setActiveSourceId(citation.source_id)}
+                onClick={() => props.onOpenSource(citation.source_id)}
               >
                 Показать документ
               </button>
@@ -110,7 +104,6 @@ export default function EvidencePanel(props: Props) {
         </div>
       )}
 
-      {activeSource ? <DocPreview source={activeSource} /> : null}
     </aside>
   );
 }

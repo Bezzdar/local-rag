@@ -524,6 +524,10 @@ export default function NotebookWorkspacePage() {
                   logClientEvent({ event: 'ui.note.delete', notebookId, metadata: { id: note.id } });
                   deleteGlobalNote.mutate(note.id);
                 }}
+                onOpenSource={(sourceId) => {
+                  logClientEvent({ event: 'ui.source.open', notebookId, metadata: { sourceId } });
+                  openSource.mutate(sourceId);
+                }}
               />
             </div>
           ) : null}
@@ -560,24 +564,17 @@ export default function NotebookWorkspacePage() {
               <button
                 className="rounded border px-2 py-1 text-xs"
                 onClick={() => {
-                  updateSource.mutate(
-                    {
-                      sourceId: sourceConfigModal.source.id,
-                      payload: {
-                        individual_config: {
-                          chunk_size: sourceConfigModal.useGlobalChunkSize ? null : Number(sourceConfigModal.chunkSize),
-                          chunk_overlap: sourceConfigModal.useGlobalOverlap ? null : Number(sourceConfigModal.chunkOverlap),
-                          ocr_enabled: sourceConfigModal.useGlobalOcrEnabled ? null : sourceConfigModal.ocrEnabled,
-                          ocr_language: sourceConfigModal.useGlobalOcrLanguage ? null : sourceConfigModal.ocrLanguage,
-                        },
+                  updateSource.mutate({
+                    sourceId: sourceConfigModal.source.id,
+                    payload: {
+                      individual_config: {
+                        chunk_size: sourceConfigModal.useGlobalChunkSize ? null : Number(sourceConfigModal.chunkSize),
+                        chunk_overlap: sourceConfigModal.useGlobalOverlap ? null : Number(sourceConfigModal.chunkOverlap),
+                        ocr_enabled: sourceConfigModal.useGlobalOcrEnabled ? null : sourceConfigModal.ocrEnabled,
+                        ocr_language: sourceConfigModal.useGlobalOcrLanguage ? null : sourceConfigModal.ocrLanguage,
                       },
                     },
-                    {
-                      onSuccess: () => {
-                        reparseSource.mutate(sourceConfigModal.source.id);
-                      },
-                    },
-                  );
+                  });
                   setSourceConfigModal(null);
                 }}
               >
