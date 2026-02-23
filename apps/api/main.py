@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .logging_setup import setup_logging
-from .routers import agents, chat, citations, client_events, global_notes, llm, notebooks, notes, sources
+from .routers import agents, chat, citations, client_events, global_notes, llm, notebooks, sources
 
 app = FastAPI(title="Local RAG Assistant API")
 logger = logging.getLogger(__name__)
@@ -24,7 +24,6 @@ app.add_middleware(
 app.include_router(notebooks.router)
 app.include_router(sources.router)
 app.include_router(chat.router)
-app.include_router(notes.router)
 app.include_router(citations.router)
 app.include_router(global_notes.router)
 app.include_router(llm.router)

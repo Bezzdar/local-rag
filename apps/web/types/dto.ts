@@ -89,21 +89,12 @@ export const GlobalNoteSchema = z.object({
   source_refs: z.array(z.record(z.union([z.string(), z.number()]))).default([]),
 });
 
-export const NoteSchema = z.object({
-  id: z.string(),
-  notebook_id: z.string(),
-  title: z.string(),
-  content: z.string(),
-  created_at: z.string(),
-});
-
 export type Notebook = z.infer<typeof NotebookSchema>;
 export type Source = z.infer<typeof SourceSchema>;
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export type Citation = z.infer<typeof CitationSchema>;
 export type SavedCitation = z.infer<typeof SavedCitationSchema>;
 export type GlobalNote = z.infer<typeof GlobalNoteSchema>;
-export type Note = z.infer<typeof NoteSchema>;
 
 
 export const AgentManifestSchema = z.object({
