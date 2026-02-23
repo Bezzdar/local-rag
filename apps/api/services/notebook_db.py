@@ -21,6 +21,7 @@ from .parse_service import DocumentMetadata
 
 
 class NotebookDB:
+    """Локальная БД ноутбука: документы, чанки, индексы и теги фильтрации."""
     def __init__(self, notebook_id: str):
         self.notebook_id = notebook_id
         NOTEBOOKS_DB_DIR.mkdir(parents=True, exist_ok=True)
@@ -31,6 +32,7 @@ class NotebookDB:
         self._migrate()
 
     def _configure(self) -> None:
+        """PRAGMA-настройки SQLite и опциональная загрузка sqlite_vec."""
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
@@ -41,6 +43,7 @@ class NotebookDB:
             self.conn.enable_load_extension(False)
 
     def _migrate(self) -> None:
+        """Создает таблицы поиска/хранения и выполняет idempotent-миграции."""
         self.conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS documents (
@@ -135,6 +138,7 @@ class NotebookDB:
         is_enabled: bool = True,
         index_error: str | None = None,
     ) -> None:
+        """Перезаписывает документ целиком: метаданные, чанки, FTS и эмбеддинги."""
         now = datetime.now(timezone.utc).isoformat()
         self.conn.execute(
             """
@@ -257,6 +261,7 @@ class NotebookDB:
         return " AND ".join(where), params
 
     def search_fts(self, query: str, top_k: int, selected_source_ids: list[str] | None = None, only_enabled_tags: bool = True) -> list[dict[str, Any]]:
+        """Полнотекстовый поиск с fallback на LIKE и общий резервный список."""
         where_clause, params = self._enabled_filter_clause(selected_source_ids, only_enabled_tags)
         rows = self.conn.execute(
             f"""
@@ -308,6 +313,7 @@ class NotebookDB:
         return [dict(row) for row in generic_rows]
 
     def search_vector(self, query_vector: list[float], top_k: int, selected_source_ids: list[str] | None = None, only_enabled_tags: bool = True) -> list[dict[str, Any]]:
+        """Векторный поиск по cosine similarity поверх сохраненных embedding JSON."""
         where_clause, params = self._enabled_filter_clause(selected_source_ids, only_enabled_tags)
         rows = self.conn.execute(
             f"""

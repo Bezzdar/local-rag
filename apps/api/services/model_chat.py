@@ -71,16 +71,21 @@ _SYSTEM_MODEL_NO_SOURCES = (
 
 # --- Основные блоки ---
 def _normalize_provider(provider: str) -> str:
+    """Нормализация названия провайдера к внутреннему формату (lowercase)."""
     return (provider or "none").strip().lower()
 
 
 def build_chat_history(messages: Iterable[ChatMessage], limit: int = DEFAULT_MODEL_HISTORY) -> list[dict[str, str]]:
+    """Обрезает историю диалога до окна контекста модели и убирает пустые реплики."""
     window = list(messages)[-limit:]
     return [{"role": item.role, "content": item.content} for item in window if item.content.strip()]
 
 
 def build_rag_context(chunks: list[dict], source_order_map: dict[str, int] | None = None) -> str:
     """Формирует строку контекста из retrieved-чанков для вставки в prompt.
+
+    Дополнительно стабилизирует нумерацию ссылок через source_order_map, чтобы
+    индексы [N] в ответе модели совпадали с порядком документов в UI.
 
     Args:
         chunks: Retrieved chunks from search.
@@ -131,11 +136,12 @@ def build_messages_for_mode(
 
 
 def inject_rag_context(history: list[dict[str, str]], rag_context: str) -> list[dict[str, str]]:
-    """Устаревший хелпер — используй build_messages_for_mode()."""
+    """Устаревший хелпер для совместимости: проксирует в build_messages_for_mode()."""
     return build_messages_for_mode("model", history, rag_context=rag_context, sources_found=bool(rag_context))
 
 
 def _openai_headers(model: str) -> dict[str, str]:
+    """Готовит auth-заголовки для OpenAI-compatible endpoint-а."""
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if api_key:
         return {"Authorization": f"Bearer {api_key}"}
@@ -154,6 +160,8 @@ async def generate_model_answer(
     sources_found: bool = False,
     timeout_s: float = 60.0,
 ) -> str:
+    """Нестриминговый запрос к LLM (single response)."""
+    # Нормализуем runtime-параметры, чтобы дальше работать с единым форматом.
     selected_provider = _normalize_provider(provider)
     endpoint = (base_url or "").strip().rstrip("/")
     selected_model = (model or "").strip()
@@ -170,7 +178,9 @@ async def generate_model_answer(
     if not selected_model:
         return "Не выбрана модель. Выберите модель в Runtime Settings."
 
+    # Формируем итоговый список сообщений: system prompt + user/assistant history.
     messages = build_messages_for_mode(chat_mode, history, rag_context=rag_context, sources_found=sources_found)
+    # Для нестриминга ожидаем единый ответ в JSON-структуре провайдера.
     payload = {
         "model": selected_model,
         "messages": messages,
@@ -197,6 +207,7 @@ async def generate_model_answer(
         )
         return f"Ошибка запроса к модели ({selected_model}): {exc}"
 
+    # Разбираем оба популярных формата ответа: Ollama (message) и OpenAI (choices).
     data = response.json()
     if isinstance(data, dict):
         message = data.get("message")
@@ -229,6 +240,7 @@ async def stream_model_answer(
     sources_found: bool = False,
     timeout_s: float = 60.0,
 ):
+    """Стриминговый запрос к LLM c поддержкой Ollama/OpenAI-compatible SSE."""
     selected_provider = _normalize_provider(provider)
     endpoint = (base_url or "").strip().rstrip("/")
     selected_model = (model or "").strip()
@@ -248,6 +260,7 @@ async def stream_model_answer(
 
     messages = build_messages_for_mode(chat_mode, history, rag_context=rag_context, sources_found=sources_found)
 
+    # Настраиваем endpoint/формат запроса под конкретный провайдер.
     if selected_provider == "ollama":
         request_url = f"{endpoint}/api/chat"
         payload = {"model": selected_model, "messages": messages, "stream": True}
@@ -273,6 +286,7 @@ async def stream_model_answer(
         async with httpx.AsyncClient(timeout=timeout_s) as client:
             async with client.stream("POST", request_url, json=payload, headers=headers) as response:
                 response.raise_for_status()
+                # Получаем поток по строкам, фильтруем keep-alive и маркер завершения [DONE].
                 async for line in response.aiter_lines():
                     if not line:
                         continue
@@ -286,6 +300,7 @@ async def stream_model_answer(
                         dropped_packets += 1
                         continue
 
+                    # Парсим инкрементальные токены в формате выбранного провайдера.
                     if selected_provider == "ollama":
                         message = item.get("message")
                         if isinstance(message, dict):
