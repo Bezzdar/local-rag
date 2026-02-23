@@ -531,3 +531,321 @@ const RIGHT_MAX = 640;  // px, максимум правой панели
 При режиме `agent` и наличии агентов появляется второй select — выбор агента.
 
 ---
+
+### 4.8 Правое выдвижное меню — Evidence Panel
+
+**Файл:** `apps/web/components/EvidencePanel.tsx`
+
+Правая панель для хранения и просмотра сохранённых цитат и глобальных заметок. Рендерится внутри `app/notebooks/[id]/page.tsx` при `!rightCollapsed`.
+
+#### Структура UI
+
+```
+┌────────────────────────────────────┐
+│ [Цитаты]  [Заметки]                │  ← табы
+├────────────────────────────────────┤
+│ Вкладка «Цитаты»:                  │
+│ ┌──────────────────────────────┐   │
+│ │ [N] filename.pdf · стр. X   [✕]  │
+│ │ Текст фрагмента (chunk_text) │   │
+│ │ Источник: Ноутбук · abc123…  │   │
+│ │ [Показать документ]          │   │
+│ └──────────────────────────────┘   │
+│ ...                                │
+├────────────────────────────────────┤
+│ Вкладка «Заметки»:                 │
+│ ┌──────────────────────────────┐   │
+│ │ Ноутбук · 23.02.2026        [✕]  │
+│ │ Текст заметки                │   │
+│ └──────────────────────────────┘   │
+└────────────────────────────────────┘
+```
+
+#### Props
+
+| Prop | Тип | Описание |
+|---|---|---|
+| `savedCitations` | `SavedCitation[]` | Список сохранённых цитат ноутбука |
+| `globalNotes` | `GlobalNote[]` | Список глобальных заметок (cross-notebook) |
+| `sources` | `Source[]` | Источники (не используется напрямую, передаётся для расширяемости) |
+| `onDeleteCitation` | `(citation) => void` | Удалить цитату → кнопка `[✕]` |
+| `onDeleteNote` | `(note) => void` | Удалить заметку → кнопка `[✕]` |
+| `onOpenSource` | `(sourceId) => void` | Открыть документ в ОС-приложении |
+
+#### Внутреннее состояние
+
+| Переменная | Тип | Назначение |
+|---|---|---|
+| `tab` | `'citations' \| 'notes'` | Активная вкладка (default: `'citations'`) |
+
+#### Вкладка «Цитаты»
+
+Отображает `savedCitations` (из `data/citations/{notebookId}/*.json`).
+
+Для каждой цитаты:
+- Бейдж `[N]` с `doc_order` — порядковый номер документа в ноутбуке.
+- Имя файла + страница (`location.page`), если есть.
+- Кнопка `[✕]` → `onDeleteCitation(citation)`.
+- Текст фрагмента (`chunk_text`).
+- Метка источника: `source_type` (`'notebook'` → «Ноутбук», иначе «БД») + первые 8 символов `source_notebook_id`.
+- Кнопка `[Показать документ]` → `onOpenSource(citation.source_id)`.
+
+Пустое состояние: подсказка «Нажмите на номер источника [N] в ответе чата, чтобы сохранить цитату».
+
+#### Вкладка «Заметки»
+
+Отображает `globalNotes` (из `data/notes/*.json`, общие для всех ноутбуков).
+
+Для каждой заметки:
+- Заголовок: `source_notebook_title` + дата создания.
+- Кнопка `[✕]` → `onDeleteNote(note)`.
+- Текст заметки (`content`).
+
+Пустое состояние: подсказка «Нажмите ↳ под ответом чата, чтобы сохранить заметку».
+
+#### Как наполняются цитаты и заметки
+
+- **Цитата** добавляется через клик на синюю кнопку `[N]` в тексте ответа в `ChatPanel` → `onCitationClick` → `saveCitation.mutate(citation)` в родительской странице → API `POST /api/notebooks/{id}/saved-citations`.
+- **Заметка** добавляется через кнопку `↳` под сообщением ассистента или через `[Сохранить в Заметки]` при активном стриме → `onSaveToNotes` → `saveGlobalNote.mutate(content)` → API `POST /api/notes`.
+
+---
+
+### 4.9 Блок настроек провайдера LLM — RuntimeSettings
+
+**Файл:** `apps/web/components/RuntimeSettings.tsx`
+
+Компонент настройки LLM-провайдера. Отображается в правой панели **главного меню** (`app/notebooks/page.tsx`) внутри секции «Провайдер LLM».
+
+#### Структура UI
+
+```
+┌─────────────────────────────────────────────────────┐
+│ Провайдер LLM                                       │
+│ Текущий режим: None                                 │
+├─────────────────────────────────────────────────────┤
+│ Порт подключения: [http://localhost:11434] [Принять]│
+├─────────────────────────────────────────────────────┤
+│ [-] Настройки чата                                  │
+│   Поставщик: [None / Ollama / OpenAI-compatible ▾] │
+│   Модель чата: [select ▾]                           │
+│   Лимит истории чата (1..50): [5]                  │
+│   ☐ debug_model_mode                               │
+│   [Подключить] [Сохранить] [Отключить]             │
+├─────────────────────────────────────────────────────┤
+│ [-] Эмбеддинг                                       │
+│   Поставщик: [None / Ollama / OpenAI-compatible ▾] │
+│   Модель эмбеддинга: [select ▾]                    │
+│   [Сохранить]                                       │
+└─────────────────────────────────────────────────────┘
+```
+
+#### Основное состояние компонента
+
+| Переменная | Тип | Назначение |
+|---|---|---|
+| `runtime` | `RuntimeConfig` | Текущая применённая конфигурация (из `lib/runtime-config.ts`) |
+| `draft` | `RuntimeDraft` | Черновик редактируемых настроек |
+| `acceptedBase` | `string` | Принятый (применённый) base URL |
+| `chatModels` | `string[]` | Список моделей чата, загруженных с Ollama |
+| `embeddingModels` | `string[]` | Список embedding-моделей |
+| `loadingChatModels` | `boolean` | Идёт загрузка списка chat-моделей |
+| `loadingEmbeddingModels` | `boolean` | Идёт загрузка embedding-моделей |
+| `chatModelsError` | `string` | Ошибка загрузки chat-моделей |
+| `embeddingModelsError` | `string` | Ошибка загрузки embedding-моделей |
+| `info` | `string` | Информационное сообщение пользователю |
+| `isChatSettingsOpen` | `boolean` | Раскрыт/свёрнут блок «Настройки чата» |
+| `isEmbeddingSettingsOpen` | `boolean` | Раскрыт/свёрнут блок «Эмбеддинг» |
+
+#### Тип `RuntimeDraft`
+
+```typescript
+type RuntimeDraft = {
+  llmBase: string;          // URL подключения (например, http://localhost:11434)
+  provider: LlmProvider;    // 'none' | 'ollama' | 'openai'
+  model: string;            // Выбранная chat-модель
+  embeddingProvider: LlmProvider;
+  embeddingModel: string;
+  maxHistory: number;       // 1..50 сообщений в истории чата
+  debugModelMode: boolean;  // Детальные логи отправки в консоль
+};
+```
+
+Черновик сохраняется в `localStorage` по ключу `'rag.runtime-config.draft'` при любом сохранении.
+
+#### Ключевые функции
+
+**`acceptPort()`** — кнопка «Принять» рядом с полем URL:
+- Нормализует URL.
+- Если пустой — сбрасывает модели, устанавливает провайдер `none`.
+- Если заполнен — устанавливает `acceptedBase`, что триггерит `useEffect` загрузки моделей.
+
+**`connect()`** — кнопка «Подключить»:
+1. Если `provider === 'none'` или пустой URL: активирует режим None.
+2. Если модель не выбрана: выводит предупреждение.
+3. Иначе: вызывает `setRuntimeConfig({llmBase, llmProvider, llmModel, maxHistory, debugModelMode})`.
+4. Генерирует событие `'rag-runtime-config-changed'` (слушают `connectionStore` и сам компонент).
+
+**`disconnect()`** — кнопка «Отключить»:
+- Сбрасывает провайдер в `none` через `setRuntimeConfig(...)`.
+
+**`saveDraft()`** — кнопка «Сохранить»:
+- Сохраняет черновик в `localStorage` (без применения провайдера).
+
+**`saveEmbeddingSettings()`** — кнопка «Сохранить» в блоке Эмбеддинг:
+- Сохраняет черновик в `localStorage`.
+- Вызывает `POST /api/settings/embedding` с `{provider, base_url, model}`.
+- Бэкенд пересоздаёт движок эмбеддингов через `store.reconfigure_embedding(...)`.
+
+#### Загрузка моделей
+
+Два `useEffect` срабатывают при изменении `acceptedBase` или провайдера:
+
+| useEffect | Условие | API-запрос |
+|---|---|---|
+| Chat models | `provider === 'ollama' && acceptedBase` | `GET /api/llm/models?provider=ollama&base_url=...&purpose=chat` |
+| Embedding models | `embeddingProvider === 'ollama' && acceptedBase` | `GET /api/llm/models?provider=ollama&base_url=...&purpose=embedding` |
+
+Для `openai`: модели в select не загружаются, показывается одна опция (значение из черновика или `gpt-4o-mini` / `text-embedding-3-small`).
+
+#### `lib/runtime-config.ts` — конфигурация LLM
+
+```typescript
+type RuntimeConfig = {
+  llmBase: string;         // base URL провайдера
+  llmProvider: LlmProvider;
+  llmModel: string;
+  maxHistory: number;
+  debugModelMode: boolean;
+};
+```
+
+Хранится в памяти (`let runtimeConfig: RuntimeConfig`) и в `localStorage` (`'rag.runtime-config'`).
+
+Функция `setRuntimeConfig(update)`: обновляет конфигурацию, сохраняет в localStorage, генерирует событие `'rag-runtime-config-changed'` на `window`.
+
+#### `lib/clientLogger.ts` — логгер UI-событий
+
+Функция `logClientEvent(payload)`:
+- Отправляет `POST /api/client-events` с JSON `{event, notebookId?, metadata?}`.
+- Используется во всех компонентах для трассировки пользовательских действий.
+- Ошибки логирования проглатываются (не прерывают UI).
+
+---
+
+### 4.10 Компонент настроек парсинга
+
+**Файл:** `apps/web/components/ParsingSettingsPanel.tsx`
+
+Отображается на главном меню в секции «Глобальные настройки парсинга» для выбранного ноутбука. Управляет глобальными настройками парсинга через API.
+
+Props: `{ notebookId: string }`.
+
+Поля, отображаемые по методу чанкинга:
+
+| Метод | Поля |
+|---|---|
+| `general` | Метод, chunk_size, chunk_overlap |
+| `context_enrichment` | Метод, chunk_size, chunk_overlap, context_window, use_llm_summary |
+| `hierarchy` | Метод, doc_type, chunk_size (fallback) |
+| `pcr` | Метод, parent_chunk_size, child_chunk_size |
+| `symbol` | Метод, symbol_separator |
+| Все методы | OCR: ocr_language, ocr_enabled, auto_parse_on_upload |
+
+Сохранение: `PATCH /api/notebooks/{notebookId}/parsing-settings`.
+
+---
+
+### 4.11 Индикатор подключения
+
+**Файл:** `apps/web/components/ConnectionIndicator.tsx`
+
+Маленький компонент, отображающий статус LLM-подключения. Рендерится на обеих страницах (main menu + notebook workspace).
+
+- Зелёная точка + «Connected: Ollama / model-name» — если `connectionStore.isConnected = true`.
+- Серая точка + «Disconnected» — если не подключено.
+
+Данные берутся из `useConnectionStore()`, который слушает событие `'rag-runtime-config-changed'`.
+
+---
+
+### 4.12 Клиентские сторы (State Management)
+
+Все сторы реализованы без внешних библиотек через `useSyncExternalStore`.
+
+#### `src/stores/chatStore.ts`
+
+Управляет состоянием очистки чата и активными потоками.
+
+| Экспорт | Тип | Описание |
+|---|---|---|
+| `beginClear()` | `() => number` | Начало очистки: закрывает все активные потоки, возвращает clearId |
+| `finishClear(id)` | `(number) => void` | Завершение очистки |
+| `failClear(id)` | `(number) => void` | Отмена очистки (при ошибке API) |
+| `registerStreamCloser(streamId, fn)` | — | Регистрирует функцию закрытия потока |
+| `unregisterStreamCloser(streamId)` | — | Снимает регистрацию |
+| `shouldIgnoreStream(startedAt)` | `boolean` | True если поток устарел из-за очистки |
+| `useChatStore()` | hook | `{isClearing, pendingClearId, lastClearId}` |
+
+#### `src/stores/modeStore.ts`
+
+Хранит текущий режим чата, персистирует в `localStorage` по ключу `'chat-mode'`.
+
+| Экспорт | Описание |
+|---|---|
+| `initializeModeStore()` | Читает из localStorage при старте |
+| `setCurrentMode(mode)` | Устанавливает режим, сохраняет в localStorage |
+| `useModeStore()` | `{currentMode: 'rag' \| 'model' \| 'agent'}` |
+
+#### `src/stores/connectionStore.ts`
+
+Производный стор от `runtimeConfig`. Слушает `'rag-runtime-config-changed'`.
+
+| Экспорт | Описание |
+|---|---|
+| `initializeConnectionStore()` | Инициализирует и подписывается на событие изменения конфига |
+| `setKeepAlive(bool)` | Управляет флагом keepAlive |
+| `useConnectionStore()` | `{isConnected, currentModel, provider, keepAlive}` |
+
+`isConnected = llmProvider !== 'none' && llmModel.trim().length > 0`.
+
+#### `src/stores/agentStore.ts`
+
+Хранит ID выбранного агента, персистирует в `localStorage` по ключу `'selected-agent-id'`.
+
+| Экспорт | Описание |
+|---|---|
+| `initializeAgentStore()` | Читает из localStorage |
+| `setSelectedAgent(agentId)` | Устанавливает агента, сохраняет в localStorage |
+| `useAgentStore()` | `{selectedAgentId: string}` |
+
+---
+
+### 4.13 SSE-клиент
+
+**Файл:** `apps/web/lib/sse.ts`
+
+Функция `openChatStream(params)` — открывает SSE-поток к `GET /api/chat/stream`.
+
+**Параметры:**
+
+| Параметр | Описание |
+|---|---|
+| `notebookId` | ID ноутбука |
+| `message` | Текст вопроса |
+| `mode` | Режим чата (`'rag' \| 'model' \| 'agent'`) |
+| `agentId?` | ID агента (только для `agent` режима) |
+| `selectedSourceIds` | Список ID включённых источников |
+| `handlers` | `{onToken, onCitations, onDone, onError}` |
+
+**Логика:**
+1. Строит URL с query-параметрами: `notebook_id`, `message`, `mode`, `selected_source_ids`, `provider`, `model`, `base_url`, `max_history`, опционально `agent_id`.
+2. Создаёт `EventSource(url)`.
+3. Слушает три события:
+   - `token` → `onToken(text)` — добавляет токен к стриму.
+   - `citations` → `onCitations(payload)` — обновляет список цитат.
+   - `done` → `onDone(messageId)` — закрывает поток.
+   - `error` → `onError(error)` — ошибка LLM.
+4. `onerror` — обрыв соединения → `onError`.
+5. Возвращает функцию закрытия `() => eventSource.close()`.
+
+---
