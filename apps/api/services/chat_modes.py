@@ -11,6 +11,7 @@ from ..schemas import Citation
 # --- Основные блоки ---
 @dataclass(frozen=True)
 class ChatModeSpec:
+    """Описание режима чата для UI и маршрутизации backend-логики."""
     code: str
     title: str
     uses_retrieval: bool
@@ -39,6 +40,7 @@ RAG_NO_SOURCES_MESSAGE = (
 
 
 def normalize_chat_mode(raw_mode: str) -> str:
+    """Приводит входной режим к поддерживаемому значению или возвращает default."""
     mode = (raw_mode or "").strip().lower()
     return mode if mode in CHAT_MODES_BY_CODE else DEFAULT_CHAT_MODE
 

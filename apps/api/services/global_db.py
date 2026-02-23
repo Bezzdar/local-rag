@@ -16,7 +16,11 @@ GLOBAL_DB_PATH = DATA_DIR / "store.db"
 
 # --- Основные блоки ---
 class GlobalDB:
-    """Thread-safe SQLite persistence for notebooks, sources, and parsing settings."""
+    """Thread-safe SQLite persistence for notebooks, sources, and parsing settings.
+
+    Слой хранит только глобальное состояние проекта (ноутбуки/источники/настройки),
+    а контент чанков и эмбеддинги лежат в per-notebook БД.
+    """
 
     def __init__(self, db_path: Path = GLOBAL_DB_PATH) -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -28,6 +32,7 @@ class GlobalDB:
         self._migrate()
 
     def _migrate(self) -> None:
+        """Создание схемы и безопасные ALTER-миграции для старых инсталляций."""
         with self._lock:
             # Add missing columns for older databases (idempotent)
             _alter_statements = [
@@ -114,6 +119,7 @@ class GlobalDB:
     # --- Sources ---
 
     def upsert_source(self, src: dict[str, Any]) -> None:
+        """Создает/обновляет запись источника вместе с индивидуальной конфигурацией."""
         indiv = src.get("individual_config")
         indiv_json = json.dumps(indiv, ensure_ascii=False) if indiv is not None else None
         with self._lock:
@@ -185,6 +191,7 @@ class GlobalDB:
             self._conn.commit()
 
     def load_all_sources(self) -> list[dict[str, Any]]:
+        """Читает источники и нормализует типы/дефолты для API-слоя."""
         _default_config: dict[str, Any] = {
             "chunk_size": None,
             "chunk_overlap": None,

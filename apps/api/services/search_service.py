@@ -12,6 +12,7 @@ from ..config import EMBEDDING_BASE_URL, EMBEDDING_DIM, EMBEDDING_ENABLED, EMBED
 from .notebook_db import db_for_notebook
 
 _ENGINE: EmbeddingEngine | None = None
+# Глобальный singleton движка: лениво инициализируется, может быть пересоздан через reconfigure_engine.
 _OVERRIDE_PROVIDER: str | None = None
 _OVERRIDE_BASE_URL: str | None = None
 _OVERRIDE_MODEL: str | None = None
@@ -28,6 +29,7 @@ def reconfigure_engine(provider: str, base_url: str, model_name: str) -> None:
 
 
 def _engine() -> EmbeddingEngine | None:
+    """Ленивая фабрика EmbeddingEngine с учетом runtime-переопределений."""
     global _ENGINE
     if _ENGINE is None:
         try:
@@ -53,6 +55,7 @@ def _engine() -> EmbeddingEngine | None:
 
 
 def _rrf_merge(vector_rows: list[dict[str, Any]], fts_rows: list[dict[str, Any]], top_n: int) -> list[dict[str, Any]]:
+    """Сливает vector+FTS выдачу по алгоритму Reciprocal Rank Fusion."""
     k = 60
     by_id: dict[str, dict[str, Any]] = {}
 
@@ -69,10 +72,13 @@ def _rrf_merge(vector_rows: list[dict[str, Any]], fts_rows: list[dict[str, Any]]
 
 
 def search(notebook_id: str, message: str, selected_source_ids: list[str], top_n: int = 5) -> list[dict[str, Any]]:
+    """Гибридный retrieval: vector + FTS, затем нормализация к общему формату API."""
     notebook_db = db_for_notebook(notebook_id)
     try:
+        # 1) Пытаемся поднять embedding engine; если недоступен — продолжаем только через FTS.
         engine = _engine()
         if engine is not None and engine.is_embedding_available:
+            # Вектор запроса используется для semantic retrieval в notebook_db.search_vector().
             query_vector = engine.embed_query(message)
             vector_rows = notebook_db.search_vector(
                 query_vector=query_vector,
@@ -83,6 +89,7 @@ def search(notebook_id: str, message: str, selected_source_ids: list[str], top_n
         else:
             vector_rows = []
         try:
+            # 2) Параллельно запрашиваем FTS-кандидатов, чтобы покрыть lexical match.
             fts_rows = notebook_db.search_fts(
                 query=message,
                 top_k=max(top_n * 3, 10),
@@ -94,7 +101,9 @@ def search(notebook_id: str, message: str, selected_source_ids: list[str], top_n
     finally:
         notebook_db.close()
 
+    # 3) Если векторов нет — возвращаем FTS, иначе объединяем выдачу через RRF.
     merged = fts_rows[:top_n] if not vector_rows else _rrf_merge(vector_rows, fts_rows, top_n)
+    # 4) Приводим записи БД к единому контракту ответа для chat/retrieval API.
     result: list[dict[str, Any]] = []
     for row in merged:
         result.append(
@@ -114,6 +123,7 @@ def search(notebook_id: str, message: str, selected_source_ids: list[str], top_n
 
 
 def chunk_to_citation_fields(chunk: dict[str, Any]) -> tuple[str, int | None, str | None]:
+    """Преобразует retrieval-чанк в поля цитаты (filename/page/section)."""
     filename = Path(chunk.get("source", "")).name or "unknown"
     page = chunk.get("page")
     section = chunk.get("section_title") or chunk.get("section_id")
@@ -129,6 +139,7 @@ def normalize_chunk_scores(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]
     """
     if not chunks:
         return chunks
+    # Нормализация нужна для единых порогов независимо от абсолютной шкалы scorer-а.
     max_score = max(c.get("score", 0.0) for c in chunks)
     if max_score <= 0.0:
         return [{**c, "score": 1.0} for c in chunks]

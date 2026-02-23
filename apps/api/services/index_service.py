@@ -10,6 +10,7 @@ from .parse_service import DocumentParser, ParserConfig
 
 
 def get_notebook_blocks(notebook_id: str) -> list[dict[str, Any]]:
+    """Возвращает плоский список чанков ноутбука в формате retrieval-слоя."""
     notebook_db = db_for_notebook(notebook_id)
     try:
         rows = notebook_db.conn.execute(
@@ -44,11 +45,15 @@ async def index_source(
     parser_config: dict[str, Any] | None = None,
     source_state: dict[str, Any] | None = None,
 ) -> tuple[Any, list[Any]]:
+    """Запускает парсинг конкретного source c учетом переданного parser_config."""
+    # Источник индексируется из фактического файла на диске (uploaded source).
     path = Path(file_path)
+    # parser_config приходит с UI/Runtime и перекрывает дефолты ParserConfig.
     parser = DocumentParser(ParserConfig(**(parser_config or {})))
     return parser.parse(
         str(path),
         notebook_id,
+        # metadata_override фиксирует doc_id и индивидуальные настройки конкретного source.
         metadata_override={
             "doc_id": source_id,
             "individual_config": (source_state or {}).get("individual_config")

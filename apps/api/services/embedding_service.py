@@ -33,6 +33,7 @@ class IndexCompatibilityError(RuntimeError):
 
 @dataclass
 class EmbeddingProviderConfig:
+    """Параметры подключения к API эмбеддингов (провайдер/модель/таймауты)."""
     base_url: str
     model_name: str
     provider: str = "ollama"
@@ -44,6 +45,7 @@ class EmbeddingProviderConfig:
 
 @dataclass
 class QuantizationConfig:
+    """Настройки сжатия векторного индекса (SQ/PQ)."""
     enabled: bool = True
     method: Literal["none", "SQ", "PQ"] = "SQ"
     sq_type: str = "QT_8bit"
@@ -54,6 +56,7 @@ class QuantizationConfig:
 
 @dataclass
 class EmbeddingConfig:
+    """Сводная конфигурация процесса эмбеддинга и путей хранения."""
     provider: EmbeddingProviderConfig
     embedding_dim: int = 0
     normalize_embeddings: bool = True
@@ -129,6 +132,7 @@ class ProcessingReport:
 
 
 class EmbeddingClient:
+    """HTTP-клиент эмбеддингов с авто-подбором endpoint и fallback-моделей."""
     def __init__(self, provider: EmbeddingProviderConfig):
         self._provider = provider
         self._client = httpx.Client(timeout=provider.api_timeout)
@@ -242,6 +246,7 @@ class EmbeddingClient:
         return self._parse_embeddings_response(response, len(texts))
 
     def get_embeddings(self, texts: list[str], use_retry: bool = True) -> list[list[float]]:
+        """Запрашивает эмбеддинги батчем; при ошибках возвращает нулевые векторы."""
         if not self._provider.enabled:
             return [self._zero() for _ in texts]
         if self._disabled_due_to_model_not_found:
@@ -277,6 +282,7 @@ class EmbeddingClient:
 
 
 class EmbeddingEngine:
+    """Оркестратор: читает чанки, считает эмбеддинги, обновляет индекс/registry."""
     def __init__(self, config: EmbeddingConfig):
         self.config = config
         self.client = EmbeddingClient(config.provider)
@@ -288,6 +294,7 @@ class EmbeddingEngine:
         return self.client.is_available
 
     def process_document(self, notebook_id: str, doc_id: str, progress_callback: Optional[Callable[[int, int], None]] = None) -> list[EmbeddedChunk]:
+        """Полный цикл документа: parsing JSON -> эмбеддинг -> запись результатов."""
         parsing_file = Path(self.config.parsing_root) / notebook_id / f"{doc_id}.json"
         payload = json.loads(parsing_file.read_text(encoding="utf-8"))
         chunks = payload["chunks"] if isinstance(payload, dict) and "chunks" in payload else payload
@@ -309,6 +316,7 @@ class EmbeddingEngine:
         return self.embed_chunks(chunks, notebook_id=notebook_id, doc_id=doc_id, progress_callback=progress_callback)
 
     def embed_chunks(self, chunks: list[dict], notebook_id: str, doc_id: str, progress_callback: Optional[Callable[[int, int], None]] = None) -> list[EmbeddedChunk]:
+        """Батчево эмбеддит чанки и обогащает их служебной мета-информацией."""
         total, done = len(chunks), 0
         all_chunks: list[EmbeddedChunk] = []
         now = _now_iso()

@@ -1,4 +1,9 @@
-"""Сервис парсинга и нормализации документов."""
+"""Сервис парсинга и нормализации документов.
+
+Поддерживает несколько методов чанкинга (General, Context Enrichment,
+Hierarchy, PCR, Symbol) и возвращает унифицированную структуру чанков,
+чтобы слой хранения/поиска не зависел от выбранного алгоритма.
+"""
 
 # --- Imports ---
 from __future__ import annotations
@@ -47,6 +52,11 @@ DOC_TYPES = ["technical_manual", "gost", "api_docs", "markdown"]
 
 @dataclass
 class ParserConfig:
+    """Глобальные настройки парсинга и чанкинга.
+
+    Значения выступают дефолтами и могут переопределяться для конкретного
+    источника через ``individual_config``.
+    """
     chunk_size: int = 512
     chunk_overlap: int = 64
     min_chunk_size: int = 50
@@ -68,6 +78,7 @@ class ParserConfig:
 
 @dataclass
 class ParsedChunk:
+    """Нормализованная модель чанка для БД, поиска и ответа LLM."""
     text: str
     chunk_type: ChunkType
     chunk_index: int
@@ -85,6 +96,7 @@ class ParsedChunk:
 
 @dataclass
 class DocumentMetadata:
+    """Метаданные документа и конфигурации, с которой он был распарсен."""
     doc_id: str
     notebook_id: str
     filename: str
@@ -122,10 +134,12 @@ class DocumentMetadata:
 
 
 def _tokenize(text: str) -> list[str]:
+    """Простейшая токенизация по пробелам (fallback-режим)."""
     return text.split()
 
 
 def _token_count(text: str) -> int:
+    """Подсчет токенов через tiktoken, либо приближенная оценка длины."""
     if not text.strip():
         return 0
     if tiktoken is not None:
@@ -138,6 +152,7 @@ def _token_count(text: str) -> int:
 
 
 def _sort_pdf_lines_multicolumn(lines: list[tuple[float, float, str, float]]) -> list[tuple[float, float, str, float]]:
+    """Пытается восстановить порядок чтения для двухколоночного PDF."""
     if len(lines) < 3:
         return sorted(lines, key=lambda item: (item[0], item[1]))
 
@@ -168,15 +183,26 @@ class DocumentParser:
         notebook_id: str,
         metadata_override: Optional[dict] = None,
     ) -> tuple[DocumentMetadata, list[ParsedChunk]]:
+        """Полный пайплайн парсинга документа.
+
+        Этапы:
+        1) извлечение сырых блоков из файла;
+        2) разбиение на чанки выбранным методом;
+        3) сбор метаданных;
+        4) сохранение результата в ``CHUNKS_DIR``.
+        """
         path = Path(filepath)
         if not path.exists():
             raise FileNotFoundError(path)
 
+        # Внешний слой может передать фиксированный doc_id и индивидуальные настройки.
         metadata_override = metadata_override or {}
         suffix = path.suffix.lower()
+        # На этом этапе получаем унифицированные блоки, независимо от формата файла.
         blocks, total_pages = self._extract_blocks(path, suffix)
 
         doc_id = str(metadata_override.get("doc_id") or uuid4())
+        # Далее блоки маршрутизируются в выбранный алгоритм чанкинга.
         chunks = self._chunk_blocks_dispatch(blocks, doc_id=doc_id, source_filename=path.name)
 
         metadata = DocumentMetadata(
@@ -212,17 +238,26 @@ class DocumentParser:
             is_enabled=bool(metadata_override.get("is_enabled", True)),
             chunking_method=self.config.chunking_method,
         )
+        # Сохраняем промежуточный JSON, который затем потребляет embedding_service.
         self.save_parsing_result(notebook_id, metadata, chunks)
         return metadata, chunks
 
     def _extract_blocks(self, path: Path, suffix: str) -> tuple[list[dict], Optional[int]]:
+        """Выбирает extraction-стратегию по расширению файла.
+
+        Возвращает список унифицированных блоков и общее число страниц (если известно).
+        """
+        # Простой текст и markdown обрабатываем без внешних библиотек.
         if suffix in {".txt", ".md"}:
             text = path.read_text(encoding="utf-8", errors="ignore")
             return self._text_to_structured_blocks(text, page_number=1), 1
+        # DOCX: парсим параграфы/стили и таблицы.
         if suffix == ".docx":
             return self._extract_docx(path)
+        # PDF: сначала text-layer, затем OCR fallback.
         if suffix == ".pdf":
             return self._extract_pdf(path)
+        # XLSX пока обработан заглушкой (schema-ready, без полноценного extraction).
         if suffix == ".xlsx":
             return ([{
                 "text": f"Table content placeholder for {path.name}",
@@ -236,8 +271,10 @@ class DocumentParser:
         raise UnsupportedFormatError(f"Unsupported format: {suffix}")
 
     def _text_to_structured_blocks(self, text: str, page_number: int) -> list[dict]:
+        """Нормализует plain text в блоки HEADER/TEXT для общего пайплайна."""
         blocks: list[dict] = []
         current_header: Optional[str] = None
+        # Идем построчно: заголовки помечаем отдельно, чтобы не терять структуру документа.
         for line in [ln.strip() for ln in text.splitlines() if ln.strip()]:
             is_header = bool(re.match(r"^(#{1,6}\s+.+|\d+(?:\.\d+)*\s+.+)$", line))
             if is_header:
@@ -264,6 +301,7 @@ class DocumentParser:
         return blocks
 
     def _extract_docx(self, path: Path) -> tuple[list[dict], Optional[int]]:
+        """Извлекает DOCX в список блоков; таблицы переводит в markdown-вид."""
         try:
             from docx import Document
             doc = Document(path)
@@ -277,6 +315,7 @@ class DocumentParser:
             }], None)
         blocks: list[dict] = []
         current_header: Optional[str] = None
+        # Параграфы DOCX конвертируем в блоки с учетом стилей (heading/list/plain).
         for paragraph in doc.paragraphs:
             text = paragraph.text.strip()
             if not text:
@@ -316,6 +355,7 @@ class DocumentParser:
                 }
             )
 
+        # Таблицы приводим к markdown-представлению, чтобы их можно было чанковать как текст.
         for table in doc.tables:
             rows = [[cell.text.strip().replace("|", "\\|") for cell in row.cells] for row in table.rows]
             if not rows:
@@ -338,6 +378,7 @@ class DocumentParser:
         return blocks, None
 
     def _extract_pdf(self, path: Path) -> tuple[list[dict], Optional[int]]:
+        """Извлекает PDF из text-layer или переключается на OCR при необходимости."""
         try:
             import fitz
         except Exception:
@@ -364,6 +405,7 @@ class DocumentParser:
 
         with doc_ctx as doc:
             total_pages = doc.page_count
+            # Проверяем наличие текстового слоя: это ключевая развилка text-layer vs OCR.
             text_layer_present = any(page.get_text("text").strip() for page in doc)
 
             if not text_layer_present:
@@ -371,6 +413,7 @@ class DocumentParser:
                     raise ParseError("Scanned PDF detected but OCR is disabled")
                 return self._extract_pdf_ocr(path), total_pages
 
+            # Постранично строим список строк с координатами и размером шрифта.
             for page_index in range(total_pages):
                 page = doc.load_page(page_index)
                 data = page.get_text("dict")
@@ -387,8 +430,10 @@ class DocumentParser:
                         x0, y0, *_ = line.get("bbox", [0.0, 0.0, 0.0, 0.0])
                         lines.append((y0, x0, text, size))
 
+                # Переупорядочиваем строки для двухколоночных макетов.
                 lines = _sort_pdf_lines_multicolumn(lines)
                 base_font = min((item[3] for item in lines), default=11.0)
+                # Эвристика: увеличенный шрифт считаем заголовком, остальное — текстом.
                 for _, _, text, size in lines:
                     if re.match(r"^\d+$", text):
                         continue
@@ -444,6 +489,7 @@ class DocumentParser:
         return cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
 
     def _extract_pdf_ocr(self, path: Path) -> list[dict]:
+        """OCR-ветка для сканов: page -> image -> preprocess -> text blocks."""
         try:
             import cv2
             import fitz
@@ -465,6 +511,7 @@ class DocumentParser:
             }]
 
         with doc_ctx as doc:
+            # OCR выполняется постранично: растеризация -> preprocessing -> Tesseract.
             for page_idx in range(doc.page_count):
                 page = doc.load_page(page_idx)
                 pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
@@ -480,6 +527,7 @@ class DocumentParser:
     # --- Chunking dispatch ---
 
     def _chunk_blocks_dispatch(self, blocks: list[dict], doc_id: str, source_filename: str) -> list[ParsedChunk]:
+        """Маршрутизатор методов чанкинга по ``self.config.chunking_method``."""
         method = self.config.chunking_method
         if method == "context_enrichment":
             return self._chunk_method_context_enrichment(blocks, doc_id, source_filename)
@@ -495,9 +543,11 @@ class DocumentParser:
     # --- Method 1: General (existing) ---
 
     def _chunk_blocks(self, blocks: list[dict], doc_id: str, source_filename: str) -> list[ParsedChunk]:
+        """General-метод: fixed-size чанки + overlap соседних фрагментов."""
         chunks: list[ParsedChunk] = []
         pending_header: Optional[dict] = None
 
+        # Проходим по потоку блоков и собираем единый список чанков.
         for block in blocks:
             block_type: ChunkType = block["chunk_type"]
             if block_type == ChunkType.HEADER:
@@ -520,6 +570,7 @@ class DocumentParser:
             chunks.extend(self._chunk_text_block(text, block, doc_id, source_filename, len(chunks), block_type))
 
         # apply overlap metadata only
+        # На финальном проходе записываем контекст соседей для retriever/LLM.
         overlap = max(0, self.config.chunk_overlap)
         for idx, chunk in enumerate(chunks):
             if idx > 0:
@@ -531,6 +582,8 @@ class DocumentParser:
             chunk.chunk_index = idx
         return chunks
 
+    # --- Низкоуровневые помощники чанкинга ---
+
     def _chunk_text_block(
         self,
         text: str,
@@ -540,6 +593,7 @@ class DocumentParser:
         start_index: int,
         chunk_type: ChunkType,
     ) -> list[ParsedChunk]:
+        """Нарезает текст токен-окнами; при слишком коротком хвосте объединяет окна."""
         tokens = _tokenize(text)
         if not tokens:
             return []
@@ -569,6 +623,7 @@ class DocumentParser:
         return out
 
     def _chunk_table_block(self, text: str, block: dict, doc_id: str, source_filename: str, start_index: int) -> list[ParsedChunk]:
+        """Нарезает таблицу по строкам, дублируя заголовок в каждом куске."""
         lines = [ln for ln in text.splitlines() if ln.strip()]
         if len(lines) <= 2:
             return [
@@ -632,10 +687,10 @@ class DocumentParser:
 
     def _chunk_method_context_enrichment(self, blocks: list[dict], doc_id: str, source_filename: str) -> list[ParsedChunk]:
         """Context Enrichment: каждый чанк получает контекстную обёртку из соседних фрагментов."""
-        # Step 1: базовое разбиение (как General)
+        # Step 1: базовое разбиение (как General).
         chunks = self._chunk_blocks(blocks, doc_id=doc_id, source_filename=source_filename)
 
-        # Step 2: добавить контекстную обёртку в embedding_text
+        # Step 2: формируем embedding_text из текущего чанка и контекста соседей.
         cw = max(0, self.config.context_window)
         for i, chunk in enumerate(chunks):
             prev_ctx = chunks[i - 1].text[-cw:] if i > 0 and cw > 0 else ""
@@ -684,6 +739,7 @@ class DocumentParser:
 
     def _chunk_method_hierarchy(self, blocks: list[dict], doc_id: str, source_filename: str) -> list[ParsedChunk]:
         """Hierarchy: разбиение по структурным маркерам документа с breadcrumb."""
+        # Берем только заранее известные паттерны, иначе откатываемся к technical_manual.
         doc_type = self.config.doc_type if self.config.doc_type in self._HIERARCHY_PATTERNS else "technical_manual"
         patterns = self._HIERARCHY_PATTERNS[doc_type]
 
@@ -691,6 +747,7 @@ class DocumentParser:
         hierarchy: dict[int, str] = {}  # level -> header text
         current_content_blocks: list[dict] = []
 
+        # flush фиксирует накопленный раздел в один или несколько финальных чанков.
         def _flush(header_level: Optional[int] = None) -> None:
             nonlocal current_content_blocks
             if not current_content_blocks:
@@ -774,6 +831,7 @@ class DocumentParser:
         chunks: list[ParsedChunk] = []
         parent_idx = 0
 
+        # Шаг Parent: создаем крупные смысловые окна для ответа LLM.
         for p_offset in range(0, len(parent_tokens), parent_step):
             parent_token_slice = parent_tokens[p_offset: p_offset + parent_step]
             parent_text = " ".join(parent_token_slice).strip()
@@ -783,6 +841,7 @@ class DocumentParser:
             parent_id = f"{doc_id}:pcr_parent:{parent_idx}"
             child_tokens = _tokenize(parent_text)
 
+            # Шаг Child: режем parent на мелкие фрагменты для векторного поиска.
             for c_offset in range(0, len(child_tokens), child_step):
                 child_token_slice = child_tokens[c_offset: c_offset + child_step]
                 child_text = " ".join(child_token_slice).strip()
@@ -820,6 +879,7 @@ class DocumentParser:
             if block["chunk_type"] != ChunkType.HEADER and block["text"].strip()
         )
 
+        # Пользователь сам управляет семантическими границами через специальный разделитель.
         segments = [seg.strip() for seg in all_text.split(sep) if seg.strip()]
 
         if not segments:
@@ -846,6 +906,7 @@ class DocumentParser:
     # --- Utilities ---
 
     def detect_language(self, text_sample: str) -> str:
+        """Определяет язык документа для метаданных; при ошибке возвращает ``unknown``."""
         if not text_sample.strip():
             return "unknown"
         try:
@@ -860,6 +921,7 @@ class DocumentParser:
         return max(1, total_tokens // max(1, self.config.chunk_size) + 1)
 
     def save_parsing_result(self, notebook_id: str, metadata: DocumentMetadata, chunks: list[ParsedChunk]) -> str:
+        """Сериализует метаданные и чанки в JSON-файл промежуточного слоя."""
         target_dir = CHUNKS_DIR / notebook_id
         target_dir.mkdir(parents=True, exist_ok=True)
         output = target_dir / f"{metadata.doc_id}.json"
