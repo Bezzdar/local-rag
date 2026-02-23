@@ -75,6 +75,8 @@ RAG/
 
 ### 4.1 Технологический стек
 
+> **Примечание для разработчика:** Фронтенд использует Next.js App Router. Все страницы в `app/` — серверные компоненты по умолчанию, но все они помечены `'use client'`, так как используют React-хуки. Управление состоянием реализовано без сторонних библиотек (Redux/Zustand) через `useSyncExternalStore` + модульные сторы.
+
 | Технология | Версия/назначение |
 |---|---|
 | Next.js (App Router) | SSR/CSR фреймворк |
@@ -125,5 +127,103 @@ apps/web/
 ├── tsconfig.json               # TypeScript конфигурация
 └── package.json                # Зависимости фронтенда
 ```
+
+---
+
+### 4.3 Корневые файлы маршрутизации
+
+#### `app/layout.tsx` — Корневой Layout
+
+Оборачивает всё приложение в два провайдера:
+- `<Providers>` — TanStack Query `QueryClientProvider` (из `components/providers.tsx`).
+- `<StoreInitializer>` — клиентский компонент, вызывающий `initializeModeStore()`, `initializeConnectionStore()`, `initializeAgentStore()` при монтировании (из `components/StoreInitializer.tsx`).
+
+#### `app/page.tsx` — Корневой маршрут
+
+Простой серверный компонент: немедленно делает `redirect('/notebooks')`. Пользователь всегда попадает на страницу ноутбуков.
+
+---
+
+### 4.4 Главное меню ноутбуков
+
+**Файл:** `apps/web/app/notebooks/page.tsx`
+
+Страница со списком ноутбуков — первый экран, который видит пользователь.
+
+#### Структура страницы
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  [h1: Notebooks]  [ConnectionIndicator]      [Новый ноутбук ▶]  │
+├──────────────────────────────────┬──────────────────────────────┤
+│  Список ноутбуков:               │  Правая панель настроек:     │
+│  ┌──────────────────────────┐    │  [→/← свернуть]              │
+│  │ Название ноутбука        │    │  ┌──────────────────────┐    │
+│  │ Дата обновления          │    │  │ [−] Провайдер LLM    │    │
+│  │ [Переименовать] [Дубл.]  │    │  │   <RuntimeSettings>  │    │
+│  │ [Удалить]                │    │  ├──────────────────────┤    │
+│  └──────────────────────────┘    │  │ [−] Глоб. парсинг   │    │
+│  ...                             │  │   <ParsingSettings>  │    │
+│                                  │  └──────────────────────┘    │
+└──────────────────────────────────┴──────────────────────────────┘
+```
+
+#### Состояние компонента (useState)
+
+| Переменная | Тип | Назначение |
+|---|---|---|
+| `isSettingsOpen` | `boolean` | Свёрнута/раскрыта правая боковая панель настроек |
+| `isRuntimeOpen` | `boolean` | Свёрнут/раскрыт блок «Провайдер LLM» |
+| `isParsingOpen` | `boolean` | Свёрнут/раскрыт блок «Глобальные настройки парсинга» |
+| `selectedNotebookId` | `string\|null` | Активный ноутбук для настроек парсинга |
+| `isDialogOpen` | `boolean` | Открыт диалог создания ноутбука |
+| `newNotebookName` | `string` | Текущее имя в поле ввода создания |
+| `isRenameDialogOpen` | `boolean` | Открыт диалог переименования |
+| `renamingNotebookId` | `string\|null` | ID ноутбука, который переименовывается |
+| `renameNotebookName` | `string` | Текущее имя в поле ввода переименования |
+
+#### TanStack Query (данные и мутации)
+
+| Хук | Key | Действие |
+|---|---|---|
+| `useQuery` | `['notebooks']` | Загружает список ноутбуков: `api.listNotebooks()` |
+| `useMutation` | `createNotebook` | `api.createNotebook(title)` → инвалидирует `['notebooks']` |
+| `useMutation` | `deleteNotebook` | `api.deleteNotebook(id)` → инвалидирует `['notebooks']` |
+| `useMutation` | `renameNotebook` | `api.renameNotebook(id, title)` → инвалидирует `['notebooks']` |
+| `useMutation` | `duplicateNotebook` | `api.duplicateNotebook(id)` → инвалидирует `['notebooks']` |
+
+#### UI-элементы и их функции
+
+| Элемент | Обработчик / Функция | Описание |
+|---|---|---|
+| `[Новый ноутбук]` | `openDialog()` | Логирует `ui.notebook.create_dialog_open`, открывает модальный диалог |
+| Список ноутбуков | `onClick` → `setSelectedNotebookId` | Выделяет ноутбук для настроек парсинга |
+| `<Link href="/notebooks/{id}">` | — | Переход в рабочее окно ноутбука, логирует `ui.notebook.opened` |
+| `[Переименовать]` | `openRenameDialog(id, title)` | Открывает модальный диалог переименования |
+| `[Дублировать]` | `duplicateNotebook.mutate(id)` | Вызывает API дублирования |
+| `[Удалить]` | `deleteNotebook.mutate(id)` | Вызывает API удаления без подтверждения (прямой вызов) |
+| `[→/←]` (кнопка панели) | `setIsSettingsOpen(toggle)` | Сворачивает/разворачивает правую панель настроек |
+| `[−/+] Провайдер LLM` | `setIsRuntimeOpen(toggle)` | Сворачивает/разворачивает блок LLM-настроек |
+| `[−/+] Глобальные настройки парсинга` | `setIsParsingOpen(toggle)` | Сворачивает/разворачивает блок настроек парсинга |
+
+#### Модальные диалоги
+
+**Диалог создания ноутбука** (`isDialogOpen`):
+- Поле ввода имени (`newNotebookName`).
+- `Enter` → `handleCreate()`: формирует имя (или timestamp), вызывает `createNotebook.mutate(title)`, закрывает диалог.
+- `Escape` / `[Отмена]` → `handleCancel()`.
+
+**Диалог переименования** (`isRenameDialogOpen`):
+- Поле ввода нового имени (`renameNotebookName`).
+- `Enter` / `[Переименовать]` → `handleRename()`: вызывает `renameNotebook.mutate({id, title})`.
+- `Escape` / `[Отмена]` → `handleRenameCancel()`.
+
+#### Правая панель настроек (on главном меню)
+
+Панель с двумя секциями, sticky — прокрутка не скрывает её:
+1. **«Провайдер LLM»** — рендерит `<RuntimeSettings />` (см. раздел 4.8).
+2. **«Глобальные настройки парсинга»** — рендерит `<ParsingSettingsPanel notebookId={activeNotebookId} />` (см. раздел 4.9).
+
+Кнопка `[→]`/`[←]` сворачивает всю панель до 48px, скрывая содержимое.
 
 ---
