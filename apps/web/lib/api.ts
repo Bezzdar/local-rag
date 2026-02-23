@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AgentManifestSchema, ChatMessageSchema, CitationSchema, GlobalNoteSchema, IndividualConfig, NoteSchema, NotebookSchema, ParsingSettings, ParsingSettingsSchema, SavedCitationSchema, SourceSchema } from '@/types/dto';
+import { AgentManifestSchema, ChatMessageSchema, CitationSchema, GlobalNoteSchema, IndividualConfig, NotebookSchema, ParsingSettings, ParsingSettingsSchema, SavedCitationSchema, SourceSchema } from '@/types/dto';
 
 const apiBase = (process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000').replace(/\/+$/, '');
 
@@ -113,13 +113,6 @@ export const api = {
       throw new Error(await response.text());
     }
   },
-  listNotes: (notebookId: string) => request(`/api/notebooks/${notebookId}/notes`, { method: 'GET' }, z.array(NoteSchema)),
-  createNote: (notebookId: string, title: string, content: string) =>
-    request(
-      `/api/notebooks/${notebookId}/notes`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, content }) },
-      NoteSchema,
-    ),
   // Saved Citations (persistent, per-notebook)
   listSavedCitations: (notebookId: string) =>
     request(`/api/notebooks/${notebookId}/saved-citations`, { method: 'GET' }, z.array(SavedCitationSchema)),

@@ -12,7 +12,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .config import CHUNKS_DIR, CITATIONS_DIR, DOCS_DIR, NOTES_DIR, NOTEBOOKS_DB_DIR, EMBEDDING_BASE_URL, EMBEDDING_DIM, EMBEDDING_ENABLED, EMBEDDING_ENDPOINT, EMBEDDING_PROVIDER
-from .schemas import ChatMessage, GlobalNote, Note, Notebook, ParsingSettings, SavedCitation, Source, CitationLocation, now_iso
+from .schemas import ChatMessage, GlobalNote, Notebook, ParsingSettings, SavedCitation, Source, CitationLocation, now_iso
 from .services.global_db import GlobalDB
 from .services.index_service import index_source
 from .services.embedding_service import EmbeddingConfig, EmbeddingEngine, EmbeddingProviderConfig
@@ -37,7 +37,6 @@ class InMemoryStore:
         self.notebooks: dict[str, Notebook] = {}
         self.sources: dict[str, Source] = {}
         self.messages: dict[str, list[ChatMessage]] = {}
-        self.notes: dict[str, list[Note]] = {}
         self.chat_versions: dict[str, int] = {}
         self.parsing_settings: dict[str, ParsingSettings] = {}
         self._embedding_engine: EmbeddingEngine | None = None
@@ -84,7 +83,6 @@ class InMemoryStore:
             notebook = Notebook(**nb_dict)
             self.notebooks[notebook.id] = notebook
             self.messages.setdefault(notebook.id, [])
-            self.notes.setdefault(notebook.id, [])
             self.chat_versions.setdefault(notebook.id, 0)
 
         # Восстановить настройки парсинга
@@ -124,7 +122,6 @@ class InMemoryStore:
         )
         self.notebooks[notebook.id] = notebook
         self.messages.setdefault(notebook.id, [])
-        self.notes.setdefault(notebook.id, [])
         self.chat_versions.setdefault(notebook.id, 0)
         settings = ParsingSettings()
         self.parsing_settings[notebook.id] = settings
@@ -179,7 +176,6 @@ class InMemoryStore:
         notebook = Notebook(id=str(uuid4()), title=title, created_at=ts, updated_at=ts)
         self.notebooks[notebook.id] = notebook
         self.messages.setdefault(notebook.id, [])
-        self.notes.setdefault(notebook.id, [])
         self.chat_versions.setdefault(notebook.id, 0)
         settings = ParsingSettings()
         self.parsing_settings[notebook.id] = settings
@@ -242,7 +238,6 @@ class InMemoryStore:
 
         del self.notebooks[notebook_id]
         self.messages.pop(notebook_id, None)
-        self.notes.pop(notebook_id, None)
         self.chat_versions.pop(notebook_id, None)
         self.parsing_settings.pop(notebook_id, None)
         _global_db.delete_notebook(notebook_id)
@@ -596,11 +591,6 @@ class InMemoryStore:
 
     def get_chat_version(self, notebook_id: str) -> int:
         return self.chat_versions.get(notebook_id, 0)
-
-    def add_note(self, notebook_id: str, title: str, content: str) -> Note:
-        note = Note(id=str(uuid4()), notebook_id=notebook_id, title=title, content=content, created_at=now_iso())
-        self.notes.setdefault(notebook_id, []).append(note)
-        return note
 
     # --- Saved Citations (persistent, per-notebook) ---
 

@@ -126,14 +126,6 @@ class GlobalNote(BaseModel):
     source_refs: list[dict[str, str | int]] = Field(default_factory=list)
 
 
-class Note(BaseModel):
-    id: str
-    notebook_id: str
-    title: str
-    content: str
-    created_at: str
-
-
 class ChatRequest(BaseModel):
     notebook_id: str
     message: str
@@ -168,16 +160,6 @@ class UpdateSourceRequest(BaseModel):
 
 class ReorderSourcesRequest(BaseModel):
     ordered_ids: list[str]
-
-
-class CreateNoteRequest(BaseModel):
-    title: str
-    content: str
-
-
-class UpdateNoteRequest(BaseModel):
-    title: str
-    content: str
 
 
 class SaveCitationRequest(BaseModel):
