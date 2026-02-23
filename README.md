@@ -1,241 +1,67 @@
-# local-rag-assistant
+# Local RAG Assistant
 
-Локальный NotebookLM-подобный ассистент в monorepo:
+Локальный ассистент для работы с документами, построенный по принципу NotebookLM.
+Позволяет загружать PDF, DOCX, XLSX и текстовые файлы, задавать вопросы на естественном языке и получать ответы со ссылками на конкретные фрагменты документов.
 
-- `apps/api` — FastAPI backend (upload → index → retrieval → chat/stream)
-- `apps/web` — Next.js frontend
-- `packages/rag_core` — перенесённое legacy-ядро (`app/`, `parsers/`)
+## Описание
 
-## Содержание
+**Local RAG Assistant** — это локальное веб-приложение с архитектурой RAG (Retrieval-Augmented Generation), работающее полностью на вашем компьютере без отправки данных в облако.
 
-- [Legacy core](#legacy-core)
-- [What is real vs mock](#what-is-real-vs-mock)
-- [Data paths](#data-paths)
-- [Полная инвентаризация проекта (актуализировано)](#полная-инвентаризация-проекта-актуализировано)
-  - [1) Карта репозитория](#1-карта-репозитория)
-  - [2) Сквозной рабочий процесс (от загрузки файла до ответа)](#2-сквозной-рабочий-процесс-от-загрузки-файла-до-ответа)
-  - [3) Детали chunking/parsing pipeline](#3-детали-chunkingparsing-pipeline)
-  - [4) Какие алгоритмы используются](#4-какие-алгоритмы-используются)
-  - [5) Роли ключевых файлов (быстрый справочник)](#5-роли-ключевых-файлов-быстрый-справочник)
-- [Установка и запуск на Windows](#установка-и-запуск-на-windows)
-  - [Предварительные требования](#предварительные-требования)
-  - [Быстрый запуск (launch.bat)](#быстрый-запуск-launchbat)
-  - [Полный ручной запуск (шаг за шагом)](#полный-ручной-запуск-шаг-за-шагом)
-  - [Горячее обновление (вручную)](#горячее-обновление-вручную)
-  - [Типовые проблемы на Windows](#типовые-проблемы-на-windows)
-- [Логирование](#логирование)
-- [Quick Start (API)](#quick-start-api)
-- [Quick Start (Web)](#quick-start-web)
-- [Manual testing checklist](#manual-testing-checklist)
-- [Smoke checks (manual curl)](#smoke-checks-manual-curl)
-- [Make commands](#make-commands)
-- [Known issues](#known-issues)
-- [Deployment note (manual)](#deployment-note-manual)
-- [Руководство по интерфейсу (меню и вкладки)](#руководство-по-интерфейсу-меню-и-вкладки)
+Ключевой сценарий:
 
-## Legacy core
-
-В `packages/rag_core` перенесены legacy-модули:
-
-- `packages/rag_core/app/*`
-- `packages/rag_core/parsers/*`
-
-Корневые legacy-копии удалены; актуальный runtime находится в `apps/*`, а библиотечное ядро — в `packages/rag_core`.
-
-## What is real vs mock
-
-### Реально работает
-- Upload сохраняет файл в `data/docs/<notebook_id>/...`.
-- Source проходит `indexing -> indexed/failed`.
-- `GET /api/notebooks/{id}/index/status` показывает реальные счётчики.
-- `GET /api/chat/stream` делает retrieval по индексированным блокам и возвращает citations с метаданными (`filename`, `page`, `section`).
-
-### Упрощено
-- Legacy engine включается флагом `(removed)` (по умолчанию off в этом окружении).
-- Генерация финального текста ответа пока template-based.
-
-## Data paths
-
-- docs: `data/docs/`
-- index: `data/notebooks/`
-- chunks artifacts: `data/parsing/`
+1. Создайте **ноутбук** — рабочее пространство для набора документов.
+2. Загрузите файлы (PDF, DOCX, XLSX, TXT). Система автоматически проиндексирует их.
+3. Задайте вопрос в чате — ассистент найдёт релевантные фрагменты и сформирует ответ со ссылками (citations) на источники.
 
 ---
 
-## Полная инвентаризация проекта (актуализировано)
+## Функционал
 
-Ниже описана **фактическая структура репозитория**, роли модулей и рабочий процесс RAG-контура.
+### Работа с документами
+- Загрузка файлов форматов: **PDF, DOCX, XLSX, TXT, LOG**
+- Автоматическое извлечение текста, очистка и секционирование
+- 5 настраиваемых методов чанкинга (разбиения на фрагменты)
+- Двойной клик по источнику — открытие файла в превью или в ОС
+- Нумерация источников, массовые операции (выделить/удалить/снять выделение)
 
-### 1) Карта репозитория
+### Режимы ответа чата
+| Режим | Описание |
+|-------|----------|
+| **QA** | Ответ на вопрос с citations из документов |
+| **Draft** | Составление черновика текста по материалам |
+| **Table** | Структурированный вывод в виде таблицы |
+| **Summarize** | Краткое резюме выбранных источников |
 
-### Корневой уровень
+### Режимы работы поиска
+| Режим | Описание |
+|-------|----------|
+| **RAG strict** | Ответ строго на основе проиндексированных документов |
+| **Model analytical** | Аналитический режим с расширенными возможностями рассуждений |
 
-- `README.md` — основной технический документ по архитектуре, запуску и верификации.
-- `Makefile` — удобные алиасы (`run-api`, `verify`, `smoke`).
-- `scripts/verify.sh` — end-to-end smoke/verification сценарий (компиляция, pytest, upload, indexing, SSE).
-- `TODO.md`, `TEST_REPORT.md` — рабочие артефакты состояния проекта.
-- `apps/` — прикладные сервисы проекта (активный backend и frontend).
-- `packages/` — библиотечные компоненты и обработка документов.
-- `data/` — файловое хранилище документов и индексов.
+### Организация работы
+- **Ноутбуки** — изолированные рабочие пространства с отдельными наборами документов
+- **Citations** — панель доказательств: показывает конкретный фрагмент и страницу источника
+- **Notes** — сохранение ответов ассистента в заметки ноутбука
+- Изменяемая ширина боковых панелей, сворачивание/разворачивание
 
-### Основной runtime-контур (активный)
-
-- `apps/api/` — FastAPI backend (основной API-контур):
-  - `main.py` — сборка приложения, CORS, подключение роутеров, health endpoints.
-  - `config.py` — пути к `data/*`, лимиты upload.
-  - `schemas.py` — Pydantic-контракты API.
-  - `store.py` — in-memory state + orchestrator индексации источников.
-  - `routers/`:
-    - `notebooks.py` — CRUD блокнотов и статус индексации.
-    - `sources.py` — загрузка/регистрация источников и выдача файлов.
-    - `chat.py` — chat/sse, формирование citations.
-    - `notes.py` — заметки.
-  - `services/`:
-    - `parse_service.py` — нормализация парсинга + fallback-режимы.
-    - `index_service.py` — сбор и хранение индексированных блоков, optional legacy indexing trigger.
-    - `search_service.py` — retrieval по индексированным чанкам.
-  - `tests/` — API smoke/integration тесты.
-
-- `apps/web/` — Next.js frontend:
-  - `app/notebooks/[id]/page.tsx` — основная рабочая зона (sources/chat/evidence).
-  - `components/` — UI-панели (`SourcesPanel`, `ChatPanel`, `EvidencePanel`, `RuntimeSettings`, `DocPreview`).
-  - `lib/api.ts` — клиент API + zod-валидация DTO.
-  - `lib/sse.ts` — SSE-клиент поточного ответа.
-  - `types/dto.ts` — типы фронтового контракта.
-
-### Ядро обработки документов
-
-- `packages/rag_core/` — вынесенное legacy-ядро обработки:
-  - `parsers/text_extraction.py` — извлечение текста, секционирование, семантическое chunking API.
-  - `parsers/preprocessing.py`, `parsers/ner_extraction.py` — вспомогательная предобработка/NER.
-  - `app/engine.py` — pipeline индексации в SQLite.
-  - `app/chunk_manager.py` — parent/child chunking, chunk storage helpers.
-  - `app/search_tools.py` — TF-IDF + semantic rerank утилиты.
-  - прочие модули (`search_engine.py`, `term_graph.py`, и т.д.) — расширения retrieval/аналитики.
-
-### Данные и артефакты
-
-- `data/docs/<notebook_id>/` — физические загруженные файлы.
-- `data/notebooks/` — persistent index storage (в т.ч. SQLite для legacy-контура).
-- `data/parsing/` — JSON-артефакты чанков.
+### Логирование
+- Серверный лог (`app_*.log`) — HTTP-запросы, индексация, ошибки
+- UI-лог (`ui_*.log`) — действия пользователя
+- Автоматическая ротация каждые 4 часа
 
 ---
 
-### 2) Сквозной рабочий процесс (от загрузки файла до ответа)
+## Требования
 
-Ниже — **последовательность исполнения** для текущего активного контура `apps/api + apps/web`.
+| Компонент | Версия | Примечание |
+|-----------|--------|------------|
+| **Python** | 3.10+ (рекомендуется 3.11) | с опцией «Add python.exe to PATH» |
+| **Node.js** | 20 LTS | 64-битная версия |
+| **npm** | входит в Node.js | |
+| **Git** | любая актуальная | |
+| **Microsoft Visual C++ Redistributable** | 2015–2022 | требуется на Windows для части Python-пакетов |
 
-1. Пользователь загружает файл во frontend (`SourcesPanel`), фронт вызывает:
-   - `POST /api/notebooks/{id}/sources/upload` (multipart).
-2. Backend (`sources.py`) сохраняет файл в `data/docs/<notebook_id>/<uuid>-<filename>`.
-3. `store.add_source_from_path(...)` создаёт `Source` со статусом `indexing` и запускает фоновой поток индексации.
-4. Фоновая индексация вызывает `index_service.index_source(...)`:
-   - выполняется `parse_service.extract_blocks(path)`;
-   - блоки приводятся к унифицированному контракту (`source_id`, `page`, `section_id`, `section_title`, `text`, `type`);
-   - блоки сохраняются в in-memory `INDEXED_BLOCKS[notebook_id]`.
-5. После успеха статус источника переводится в `indexed` (или `failed` при ошибке).
-6. Пользователь отправляет вопрос, frontend открывает `GET /api/chat/stream?...`.
-7. `chat_stream` вызывает retrieval `search_service.search(...)`:
-   - фильтрация по выбранным source ids;
-   - ранжирование по текущему алгоритму;
-   - top-N чанков преобразуются в citations.
-8. Ответ формируется шаблонно (`_build_answer`) и отдаётся как SSE-события:
-   - `token` (поток текста), затем `citations`, затем `done`.
-9. Фронт отображает поток ответа, а справа — evidence/citations.
-
----
-
-### 3) Последовательности парсинга и чанкинга
-
-## 3.1 Активный API-путь (`apps/api/services/parse_service.py`)
-
-Текущая боевая ветка ориентирована на устойчивость и предсказуемость:
-
-1. Проверка расширения: поддерживаются `.pdf/.docx/.xlsx/.txt/.log/.doc`.
-2. Для `.pdf/.docx/.xlsx` используется **быстрый fallback-блок** (placeholder extraction), чтобы не ломать ingest в окружениях без тяжёлых парсеров.
-3. Для `.txt/.log/.doc` и прочих разрешённых вариантов — попытка полноценного `rag_core.parsers.text_extraction.extract_blocks`.
-4. При исключении — fallback-блок с техническим описанием причины.
-
-Результат: API всегда возвращает хотя бы один нормализованный блок и может завершить индексацию, даже в деградированном режиме.
-
-## 3.2 Полный parser/chunking pipeline (`packages/rag_core/parsers/text_extraction.py`)
-
-Когда используется полноценное извлечение, цепочка такая:
-
-1. **Извлечение текста** по формату:
-   - PDF: `PyMuPDF (fitz)`, постранично, параллельная выборка страниц.
-   - DOCX/DOC: `python-docx`, включая таблицы (в markdown-подобное представление).
-   - TXT/LOG: прямое чтение.
-2. **Очистка текста**:
-   - удаление непечатаемых символов,
-   - нормализация пробелов/переносов.
-3. **Удаление повторяющегося page-noise** (headers/footers):
-   - линии, повторяющиеся на значимой доле страниц, вырезаются.
-4. **Секционирование**:
-   - эвристика заголовков (`1.2 ...`, `РАЗДЕЛ ...`, upper headings),
-   - формируются пары `(section_title, section_text)` и `section_id` вида `p{page}.s{n}`.
-5. Опционально: **TextRank boundaries** (sumy), если включён режим `use_textrank`.
-
-## 3.3 Семантический чанкинг (`packages/rag_core/app/chunk_manager.py`)
-
-Для legacy-индексации в SQLite используется двухуровневое дробление:
-
-1. Внутри блока: `_split_technical_sections(...)` по техзаголовкам.
-2. Формируются **parent chunks** (крупные контекстные окна, `_PARENT_MAX_LEN`).
-3. Для каждого parent формируются **child chunks** (`_CHILD_MAX_LEN`) с overlap по предложениям.
-4. Между child и parent сохраняется связь через `parent_id`.
-
-Это даёт компромисс между полнотой контекста (parent) и точностью retrieval (child).
-
----
-
-### 4) Какие алгоритмы используются
-
-В проекте одновременно присутствуют алгоритмы **активного** и **legacy** контура.
-
-### Активный контур (`apps/api`)
-
-- Retrieval ранжирование: упрощённый keyword-подход
-  - токенизация регуляркой (`[\w\-]+`),
-  - базовая AND-группа,
-  - fallback сортировка по наличию подстроки + длине чанка.
-- Генерация ответа: template-based (без LLM-генерации по умолчанию).
-- Стриминг: SSE (`token -> citations -> done`).
-
-### Legacy / расширенный контур (`packages/rag_core`)
-
-- TF-IDF retrieval (`sklearn` cosine similarity).
-- Semantic rerank через `SentenceTransformer` эмбеддинги (cosine в embedding space).
-- Simhash near-duplicate filtering при chunking.
-- Adaptive chunk sizing по средней длине предложения.
-- TextRank для выделения смысловых границ (при наличии sumy).
-- Индексация в SQLite с метаданными (`file_path`, `page_label`, `section_id`, `term_tags`, `parent_id`).
-
----
-
-### 5) Роли ключевых файлов (быстрый справочник)
-
-- `apps/api/store.py` — единая точка управления жизненным циклом notebook/source/message/note и фоновой индексацией.
-- `apps/api/services/index_service.py` — конвертация parser blocks в индексируемые блоки notebook-level.
-- `apps/api/services/search_service.py` — retrieval + преобразование chunk -> citation fields.
-- `packages/rag_core/parsers/text_extraction.py` — «источник истины» по извлечению/нормализации/секции текста.
-- `packages/rag_core/app/chunk_manager.py` — управляет структурным семантическим чанкингом (parent/child).
-- `packages/rag_core/app/engine.py` — end-to-end legacy индексатор (extract -> chunk -> embed -> sqlite).
-- `apps/web/app/notebooks/[id]/page.tsx` — orchestration UI workflow (queries/mutations/SSE).
-- `apps/web/lib/api.ts`, `apps/web/lib/sse.ts` — transport слой frontend.
-
----
-
-## Установка и запуск на Windows
-
-### Предварительные требования
-
-- **Python 3.10+** (рекомендуется 3.11) с опцией `Add python.exe to PATH`.
-- **Node.js 20 LTS**.
-- **Git for Windows**.
-- **Microsoft Visual C++ Redistributable 2015-2022** (часто требуется для Python-пакетов).
-
-Проверка версий:
+Проверка установленных версий:
 
 ```bat
 python --version && node --version && npm --version && git --version
@@ -243,95 +69,79 @@ python --version && node --version && npm --version && git --version
 
 ---
 
-### Быстрый запуск (launch.bat)
+## Установка и запуск
 
-В корне репозитория находится файл `launch.bat` — интерактивный CLI-лаунчер.
-Запустите его двойным кликом или из командной строки:
+### Быстрый запуск — Windows (рекомендуется)
+
+В корне репозитория находится `launch.bat` — интерактивный лаунчер.
 
 ```bat
 launch.bat
 ```
 
-Откроется текстовое меню:
+При первом запуске (пункт **2. Запустить программу**) лаунчер автоматически:
+- создаёт виртуальное окружение Python (`.venv`);
+- устанавливает backend-зависимости (`pip install`);
+- создаёт `apps/web/.env.local` из `.env.example`;
+- запускает API-сервер (uvicorn) и Web-сервер (npm run dev) в отдельных окнах.
 
-```
-╔════════════════════════════════════════════╗
-║       Local RAG Assistant — Launcher       ║
-╚════════════════════════════════════════════╝
+После запуска приложение доступно по адресам:
 
-  1.  Обновление с GitHub
-  2.  Запустить программу
-  3.  Откат настроек до базовых
-  4.  Логи
-  0.  Выход
-```
+- **Web-интерфейс:** <http://localhost:3000>
+- **API:** <http://127.0.0.1:8000>
+- **Swagger UI:** <http://127.0.0.1:8000/docs>
 
-**Описание пунктов меню:**
+**Меню лаунчера:**
 
 | Пункт | Действие |
 |-------|----------|
-| **1. Обновление** | `git pull --rebase` + `pip install` + `npm install` + очистка `.next` |
-| **2. Запуск** | Создаёт venv (если нет), запускает API и Web сервер |
-| **3. Откат** | Удаляет `data/docs`, `data/notebooks`, `data/parsing`; сбрасывает `apps/web/.env.local` |
-| **4. Логи** | Подменю управления окнами логов |
-| **0. Выход** | Закрывает лаунчер |
+| **1. Обновление с GitHub** | `git pull --rebase` + обновление `pip` и `npm` зависимостей + очистка `.next` |
+| **2. Запустить программу** | Создаёт venv (если нет), запускает API и Web |
+| **3. Откат настроек** | Удаляет `data/docs`, `data/notebooks`, `data/parsing`, сбрасывает `.env.local` |
+| **4. Логи** | Подменю просмотра лог-файлов |
+| **0. Выход** | Закрыть лаунчер |
 
 **Подменю «Логи»:**
 
-```
-  A.  Серверный лог  (app_*.log)   [ОТКРЫТ/ЗАКРЫТ]
-  B.  UI-события     (ui_*.log)    [ОТКРЫТ/ЗАКРЫТ]
-  C.  Открыть папку с логами
-  R.  Режим запуска процессов:     [visible/hidden]
-  0.  Назад
-```
-
-- **A / B** — открывают или закрывают отдельное окно CMD с `tail -f` соответствующего лог-файла.
-- **C** — открывает папку `data/logs/sessions` в Проводнике.
-- **R** — переключает режим запуска процессов:
-  - `visible` — API и Web запускаются в отдельных видимых окнах PowerShell.
-  - `hidden` — процессы работают в фоне без видимых окон (логи доступны через пункты A/B).
-
-> Режим сохраняется в `%TEMP%\rag_launcher\window_mode.txt` и применяется при следующем нажатии «2. Запустить».
+| Пункт | Действие |
+|-------|----------|
+| **A** | Открыть окно с серверным логом (`app_*.log`) |
+| **B** | Открыть окно с UI-событиями (`ui_*.log`) |
+| **C** | Открыть папку `data/logs/sessions` в Проводнике |
+| **0** | Назад в главное меню |
 
 ---
 
-### Полный ручной запуск (шаг за шагом)
+### Ручная установка (Windows — шаг за шагом)
 
-Этот сценарий предназначен для понимания того, что происходит «под капотом», отладки или первого запуска без bat-файла.
-
-#### Шаг 1 — Клонирование репозитория
+#### 1. Клонирование репозитория
 
 ```bat
-git clone <URL_ВАШЕГО_РЕПО>
+git clone <URL_репозитория>
 cd RAG
 ```
 
-#### Шаг 2 — Создание виртуального окружения Python
+#### 2. Виртуальное окружение Python и зависимости backend
+
+**cmd.exe:**
 
 ```bat
 python -m venv .venv
-```
-
-#### Шаг 3 — Установка зависимостей backend
-
-cmd.exe:
-
-```bat
 .venv\Scripts\activate.bat
 python -m pip install --upgrade pip
 pip install -r apps\api\requirements.txt
 ```
 
-PowerShell (если выдаёт ошибку активации — сначала выполните `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`):
+**PowerShell** (если активация не работает — сначала выполните `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`):
 
 ```powershell
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r apps/api/requirements.txt
 ```
 
-#### Шаг 4 — Подготовка frontend
+#### 3. Установка frontend
 
 Во втором терминале (из корня репозитория):
 
@@ -341,7 +151,7 @@ cd apps\web
 npm install
 ```
 
-#### Шаг 5 — Запуск backend API
+#### 4. Запуск API backend
 
 В первом терминале (с активированным venv):
 
@@ -349,12 +159,7 @@ npm install
 uvicorn apps.api.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-Проверка:
-
-- Swagger UI: <http://127.0.0.1:8000/docs>
-- Health: <http://127.0.0.1:8000/api/health>
-
-#### Шаг 6 — Запуск frontend
+#### 5. Запуск Web frontend
 
 Во втором терминале (в папке `apps/web`):
 
@@ -362,315 +167,226 @@ uvicorn apps.api.main:app --host 127.0.0.1 --port 8000 --reload
 npm run dev
 ```
 
-После запуска frontend доступен по адресу <http://localhost:3000>.
+#### 6. Проверка
 
-#### Шаг 7 — Быстрая проверка
-
-1. Откройте <http://localhost:3000>.
-2. Создайте ноутбук.
-3. Загрузите PDF/DOCX/XLSX.
-4. Дождитесь статуса `indexed`.
-5. Задайте вопрос и проверьте citations справа.
+Откройте <http://localhost:3000>, создайте ноутбук, загрузите документ и задайте вопрос.
 
 ---
 
-### Горячее обновление (вручную)
-
-Когда изменения уже скачаны (`git pull`) и нужно обновить зависимости без переустановки с нуля.
-
-```bat
-REM 1) Забрать изменения
-git pull --rebase
-
-REM 2) Backend
-.venv\Scripts\activate.bat
-python -m pip install -r apps\api\requirements.txt
-
-REM 3) Frontend
-cd apps\web
-npm install
-rmdir /s /q .next
-cd ..\..
-```
-
-Затем перезапустите API и Web (остановите и запустите заново).
-
----
-
-### Типовые проблемы на Windows
-
-- **`python` не найден** — переустановите Python с опцией `Add to PATH`.
-- **Ошибка активации `.venv` в PowerShell** — выполните `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`.
-- **`npm install` даёт 403/timeout** — пропишите корпоративный registry: `npm config set registry https://<registry>/`
-- **`pip install` блокируется proxy** — используйте `PIP_INDEX_URL=https://<pypi>/simple`.
-- **`next-swc.win32-x64-msvc.node is not a valid Win32 application`** — убедитесь в 64-битном Node.js (`node -p "process.arch"` → должно быть `x64`). При необходимости переустановите node_modules:
-  ```powershell
-  cd apps/web
-  Remove-Item -Recurse -Force node_modules, package-lock.json
-  npm install
-  ```
-
----
-
-## Логирование
-
-### Структура лог-файлов
-
-Логи создаются при каждом запуске backend и хранятся в `data/logs/sessions/`.
-
-Каждая сессия (= один запуск uvicorn) создаёт **два файла**:
-
-| Файл | Содержимое |
-|------|-----------|
-| `app_YYYY-MM-DD_HH-MM.log` | Серверные события: HTTP-запросы/ответы, индексация, ошибки |
-| `ui_YYYY-MM-DD_HH-MM.log` | UI-события: нажатия кнопок, действия пользователя |
-
-Пример:
-
-```
-data/logs/sessions/
-  app_2025-01-15_09-30.log
-  ui_2025-01-15_09-30.log
-  app_2025-01-15_13-30.log   ← ротация через 4 часа
-  ui_2025-01-15_13-30.log
-```
-
-### Ротация
-
-При непрерывной работе файлы автоматически ротируются **каждые 4 часа** (хранится до 12 ротаций на сессию = 48 ч работы).
-
-### Что попадает в логи
-
-**Серверный лог (`app_*.log`)**:
-- Старт/стоп приложения
-- Каждый HTTP-запрос (метод, путь, статус, время выполнения, IP)
-- События индексации источников
-- Ошибки и исключения
-
-**UI-лог (`ui_*.log`)**:
-- Открытие/создание/удаление/переименование ноутбука
-- Загрузка и удаление документов
-- Отправка сообщения в чат, смена режима
-- Открытие конфигурации источника, сброс/переиндексация
-- Сворачивание/разворачивание панелей
-- Сохранение ответа в заметки
-
-### Просмотр логов
-
-Через `launch.bat → 4 (Логи)`:
-- **A** — открыть окно с tail серверного лога
-- **B** — открыть окно с tail UI-событий
-- **C** — открыть папку в Проводнике
-
-Вручную (PowerShell):
-
-```powershell
-# Последний серверный лог
-$f = Get-ChildItem data\logs\sessions\app_*.log | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-Get-Content $f.FullName -Wait -Tail 50
-```
-
----
-
-## Quick Start (API)
-
-### Online install
+### Быстрый запуск — Linux / macOS
 
 ```bash
-python -m venv .venv
+# 1. Backend
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r apps/api/requirements.txt
+
+# 2. Запуск API
+uvicorn apps.api.main:app --host 127.0.0.1 --port 8000 --reload
+
+# 3. Frontend (в другом терминале)
+cd apps/web
+cp ../../.env.example .env.local
+npm install
+npm run dev
 ```
 
-### Offline install (wheels)
+---
+
+### Offline-установка (Python)
+
+Для окружений без доступа к PyPI:
 
 ```bash
-# online machine
+# На машине с интернетом — скачать wheel-файлы
 mkdir -p wheels
 pip download -r apps/api/requirements.txt -d wheels
 
-# offline machine
+# На целевой машине — установить из wheels
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate   # или .venv\Scripts\activate.bat на Windows
 pip install --no-index --find-links=./wheels -r apps/api/requirements.txt
 ```
 
-Для корпоративного индекса:
+Корпоративный PyPI-индекс:
 
 ```bash
 export PIP_INDEX_URL=https://<your-corp-pypi>/simple
 pip install -r apps/api/requirements.txt
 ```
 
-### Run API
+---
 
-```bash
-make run-api
-# или
-uvicorn apps.api.main:app --host 127.0.0.1 --port 8000 --reload
+## Зависимости (backend)
+
+Файл `apps/api/requirements.txt`:
+
+| Пакет | Версия | Назначение |
+|-------|--------|------------|
+| `fastapi` | 0.115.4 | Web-фреймворк API |
+| `uvicorn` | 0.32.0 | ASGI-сервер |
+| `python-multipart` | 0.0.12 | Загрузка файлов (multipart) |
+| `httpx` | 0.27.2 | HTTP-клиент |
+| `numpy` | 2.1.3 | Численные вычисления |
+| `langdetect` | 1.0.9 | Определение языка текста |
+| `python-docx` | 1.1.2 | Парсинг DOCX |
+| `openpyxl` | 3.1.5 | Парсинг XLSX |
+| `PyMuPDF` | 1.24.11 | Парсинг PDF |
+| `pytesseract` | 0.3.13 | OCR (опционально) |
+| `opencv-python` | 4.10.0.84 | Обработка изображений |
+| `tiktoken` | 0.8.0 | Токенизация текста |
+| `sqlite-vec` | 0.1.6 | Векторный поиск в SQLite |
+| `pytest` | 8.3.3 | Тестирование |
+
+Frontend использует **Next.js 14**, **React 18**, **TanStack Query**, **Zod**.
+
+---
+
+## Типовые проблемы
+
+| Проблема | Решение |
+|----------|---------|
+| `python` не найден | Переустановите Python с опцией «Add to PATH» |
+| Ошибка активации `.venv` в PowerShell | `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` |
+| `pip install` блокируется proxy | `PIP_INDEX_URL=https://<pypi>/simple pip install ...` |
+| `npm install` даёт 403/timeout | `npm config set registry https://<corp-registry>/` |
+| `next-swc.win32-x64-msvc.node is not a valid Win32 application` | Убедитесь, что Node.js 64-битный (`node -p "process.arch"` → `x64`). Удалите и переустановите: `Remove-Item -Recurse -Force node_modules, package-lock.json && npm install` |
+| `npm install` падает без интернета | Настройте корпоративный npm registry или используйте offline npm cache |
+
+---
+
+## Структура проекта
+
 ```
-
-### Full verification (проверено)
-
-```bash
-make verify
-# или
-bash scripts/verify.sh
+RAG/
+├── apps/
+│   ├── api/               # FastAPI backend
+│   │   ├── main.py        # Сборка приложения, CORS, роутеры
+│   │   ├── config.py      # Пути к data/*, лимиты upload
+│   │   ├── schemas.py     # Pydantic-контракты API
+│   │   ├── store.py       # In-memory state, оркестрация индексации
+│   │   ├── routers/       # notebooks, sources, chat, notes
+│   │   ├── services/      # parse_service, index_service, search_service
+│   │   └── requirements.txt
+│   └── web/               # Next.js frontend
+│       ├── app/           # Страницы (notebooks list, notebook workspace)
+│       ├── components/    # SourcesPanel, ChatPanel, EvidencePanel, DocPreview
+│       ├── lib/           # api.ts (клиент), sse.ts (стриминг)
+│       └── types/         # DTO-типы
+├── packages/
+│   └── rag_core/          # Ядро обработки документов
+│       ├── parsers/       # text_extraction.py, preprocessing.py
+│       └── app/           # engine.py, chunk_manager.py, search_tools.py
+├── agent/                 # Агентные компоненты
+├── data/                  # Файловое хранилище (создаётся при запуске)
+│   ├── docs/              # Загруженные файлы (<notebook_id>/...)
+│   ├── notebooks/         # Индексы (SQLite и др.)
+│   ├── parsing/           # JSON-артефакты чанков
+│   └── logs/sessions/     # Лог-файлы
+├── scripts/               # verify.sh, dev_run.sh
+├── Makefile               # run-api, verify, smoke
+├── launch.bat             # Лаунчер для Windows
+└── .env.example           # Шаблон конфигурации frontend
 ```
 
 ---
 
-## Quick Start (Web)
+## Рабочий процесс (от загрузки до ответа)
 
-```bash
-cd apps/web
-npm install
-cp ../../.env.example .env.local
-npm run dev
-```
-
-### Статус в текущем окружении
-
-В этом окружении `npm` registry недоступен:
-
-- `npm install` падает с `E403 Forbidden`.
-- `npm run build` не стартует без зависимостей (`next: not found`).
-
-### Альтернативы
-
-1. Настроить корпоративный registry/proxy:
-
-```bash
-npm config set registry https://<your-corp-npm-registry>/
-```
-
-2. Offline установка из локального кэша/tarball (prebuilt node_modules cache/mirror).
+1. Пользователь загружает файл → `POST /api/notebooks/{id}/sources/upload`
+2. Backend сохраняет файл в `data/docs/<notebook_id>/`
+3. Фоновый поток индексации: извлечение текста → чанкинг → сохранение блоков
+4. Статус источника переходит в `indexed` (или `failed`)
+5. Пользователь задаёт вопрос → `GET /api/chat/stream`
+6. Retrieval: токенизация запроса → ранжирование чанков → top-N citations
+7. Ответ отдаётся потоком SSE: `token → citations → done`
+8. Frontend отображает текст и панель доказательств
 
 ---
 
-## Manual testing checklist
+## Методы чанкинга
 
-1. **Upload**: загрузить PDF/DOCX/XLSX в выбранный notebook.
-2. **Index**: проверить, что статусы source переходят в `indexed`.
-3. **Chat**: отправить вопрос в чат (`mode=qa`).
-4. **Citations**: убедиться, что справа есть citations с `filename` и `page/section`.
+Конфигурируется через настройки источника. Доступно 5 методов:
+
+- **Fixed size** — фрагменты фиксированного размера с overlap
+- **Sentence-based** — разбиение по предложениям
+- **Paragraph-based** — разбиение по абзацам
+- **Section-based** — по обнаруженным заголовкам разделов
+- **Semantic** — двухуровневый parent/child чанкинг с сохранением контекста
 
 ---
 
-## Smoke checks (manual curl)
+## Команды Make
 
 ```bash
+make run-api   # Запустить API через scripts/dev_run.sh
+make verify    # Полная проверка backend (compile + pytest + upload + indexing + SSE)
+make smoke     # Псевдоним verify
+```
+
+---
+
+## Быстрая проверка через curl
+
+```bash
+# Получить ID первого ноутбука
 NB_ID=$(curl -s http://127.0.0.1:8000/api/notebooks | python -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
 
-echo 'sample-pdf' > /tmp/smoke.pdf
+# Загрузить тестовый файл
 curl -s -X POST "http://127.0.0.1:8000/api/notebooks/$NB_ID/sources/upload" \
-  -F "file=@/tmp/smoke.pdf;type=application/pdf"
+  -F "file=@/tmp/test.pdf;type=application/pdf"
 
-SRC_JSON=$(curl -s "http://127.0.0.1:8000/api/notebooks/$NB_ID/sources")
-FILE_PATH=$(echo "$SRC_JSON" | python -c "import sys,json; print(json.load(sys.stdin)[-1]['file_path'])")
-
-curl -sG "http://127.0.0.1:8000/api/files" \
-  --data-urlencode "path=$FILE_PATH" -o /tmp/downloaded.bin
-
-curl -N "http://127.0.0.1:8000/api/chat/stream?notebook_id=$NB_ID&message=section&mode=qa"
+# Отправить вопрос (SSE-стрим)
+curl -N "http://127.0.0.1:8000/api/chat/stream?notebook_id=$NB_ID&message=summary&mode=qa"
 ```
 
 ---
 
-## Make commands
+## Руководство по интерфейсу
 
-```bash
-make verify   # full backend verification pipeline
-make run-api  # start API with logs via scripts/dev_run.sh
-make smoke    # alias to verify
+### Главная страница `/notebooks`
+
+- **New notebook** — создание нового ноутбука
+- Клик по карточке — открыть ноутбук
+- Правая боковая панель — настройки подключения (`API URL`, провайдер, модель)
+
+### Рабочее пространство ноутбука `/notebooks/[id]`
+
+**Левая панель — Sources:**
+- Загрузка файлов (PDF/DOCX/XLSX)
+- Список источников с чекбоксами для выбора активных документов
+- Двойной клик — открытие документа в превью
+- Поиск по источникам, массовые операции
+
+**Центральная панель — Chat:**
+- Переключение режима: QA / Draft / Table / Summarize
+- Переключение режима поиска: RAG strict / Model analytical
+- Поле ввода + кнопка отправки
+- Кнопки под ответом: `Copy`, `Save to Notes`
+
+**Правая панель — Evidence:**
+- Вкладка **Citations** — цитаты с привязкой к странице/разделу
+- Вкладка **Notes** — сохранённые заметки
+- Превью документа при клике по citation
+
+Обе боковые панели поддерживают сворачивание и изменение ширины перетаскиванием разделителя.
+
+---
+
+## Логирование
+
+Логи хранятся в `data/logs/sessions/`. При каждом запуске создаются два файла:
+
+| Файл | Содержимое |
+|------|-----------|
+| `app_YYYY-MM-DD_HH-MM.log` | HTTP-запросы, индексация, ошибки сервера |
+| `ui_YYYY-MM-DD_HH-MM.log` | Действия пользователя в интерфейсе |
+
+Ротация происходит автоматически каждые **4 часа** (до 12 ротаций = 48 ч работы).
+
+Просмотр через PowerShell:
+
+```powershell
+$f = Get-ChildItem data\logs\sessions\app_*.log | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+Get-Content $f.FullName -Wait -Tail 50
 ```
-
----
-
-## Known issues
-
-- `pip install` может быть заблокирован proxy/403.
-  - workaround: wheels (`pip download` + `--no-index --find-links`).
-- `npm install` может быть заблокирован registry/403.
-  - workaround: корпоративный registry/proxy или offline npm cache.
-
----
-
-## Deployment note (manual)
-
-Перед ручным развёртыванием на новом окружении:
-
-1. `make verify`
-2. Проверить `TEST_REPORT.md`
-3. Если web блокирован по npm — сначала поднять внутренний registry/proxy
-
-## Руководство по интерфейсу (меню и вкладки)
-
-Ниже — краткий user guide по основным экранам веб-приложения и назначению элементов меню.
-
-### 1) Главная страница `/notebooks`
-
-Это стартовый экран со списком ноутбуков.
-
-- **Заголовок Notebooks + кнопка `New notebook`** — создание нового ноутбука.
-- **Список карточек ноутбуков**:
-  - клик по карточке открывает рабочее окно ноутбука;
-  - кнопка **`Удалить`** удаляет конкретный ноутбук из списка.
-- **Правая боковая панель настроек подключения**:
-  - содержит блок `Настройки подключения` (`API URL`, `Провайдер`, `Модель`);
-  - настройки сохраняются кнопкой `Сохранить настройки`;
-  - панель можно **свернуть/развернуть** кнопкой со стрелкой вверху.
-
-### 2) Рабочее окно ноутбука `/notebooks/[id]`
-
-Экран разделён на 3 области: левая панель источников, центральный чат, правая панель доказательств/заметок.
-
-#### Левая панель — Sources / управление документами
-
-- **Выбор ноутбука** (dropdown `Notebooks`) — переход между ноутбуками.
-- **Кнопка `На главную страницу`** — возврат к списку ноутбуков.
-- **Поиск по источникам** (`Search sources`) — фильтрация списка документов.
-- **Upload PDF/DOCX/XLSX** — загрузка нового файла в текущий ноутбук.
-- **Список источников с чекбоксами** — выбор документов для использования в ответах чата.
-- **Массовые действия по документам**:
-  - `Выделить все`;
-  - `Снять выделение`;
-  - `Удалить все`;
-  - `Удалить невыбранные`.
-- **Сворачивание/разворачивание панели** — кнопкой со стрелкой в заголовке панели.
-- **Ручное изменение ширины панели** — перетаскиванием вертикального разделителя (мышью).
-
-#### Центральная панель — Chat
-
-- Переключение режима ответа (`QA`, `Draft`, `Table`, `Summarize`).
-- История сообщений пользователя и ассистента.
-- Поле ввода вопроса + кнопка `Send`.
-- Во время потокового ответа доступны:
-  - `Copy` — копирование текста;
-  - `Save to Notes` — сохранение результата в заметки;
-  - счетчик citations.
-
-#### Правая панель — Evidence (`Citations` / `Notes`)
-
-- Вкладка **`Citations`**:
-  - показывает цитаты, использованные при ответе;
-  - клик по цитате открывает связанный документ в превью.
-- Вкладка **`Notes`**:
-  - показывает сохраненные заметки ноутбука.
-- Ниже вкладок отображается **превью документа** (если выбран источник).
-- **Сворачивание/разворачивание панели** — кнопкой со стрелкой в заголовке панели.
-- **Ручное изменение ширины панели** — перетаскиванием вертикального разделителя (мышью).
-
-### 3) Как обычно работает сценарий пользователя
-
-1. На странице `/notebooks` создайте ноутбук.
-2. Откройте ноутбук из списка.
-3. В левой панели загрузите документы и отметьте нужные источники.
-4. В центральной панели задайте вопрос.
-5. Справа проверьте `Citations` (доказательства) и при необходимости сохраните ответ в `Notes`.
-6. При необходимости меняйте ширину/видимость боковых панелей для удобного layout.
-
-## Notebook testing note
-See `notebook.md` for environment limitations and E2E prerequisites for Notebook checks.
-
-
