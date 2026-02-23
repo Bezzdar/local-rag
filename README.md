@@ -273,10 +273,6 @@ RAG/
 │       ├── components/    # SourcesPanel, ChatPanel, EvidencePanel, DocPreview
 │       ├── lib/           # api.ts (клиент), sse.ts (стриминг)
 │       └── types/         # DTO-типы
-├── packages/
-│   └── rag_core/          # Ядро обработки документов
-│       ├── parsers/       # text_extraction.py, preprocessing.py
-│       └── app/           # engine.py, chunk_manager.py, search_tools.py
 ├── agent/                 # Агентные компоненты
 ├── data/                  # Файловое хранилище (создаётся при запуске)
 │   ├── docs/              # Загруженные файлы (<notebook_id>/...)
