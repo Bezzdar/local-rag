@@ -13,6 +13,7 @@ type Props = {
   messages: ChatMessage[];
   streaming: string;
   citations: Citation[];
+  messageCitations: Map<string, Citation[]>;
   disableSend?: boolean;
   disableClearChat?: boolean;
   clearDisabledReason?: string;
@@ -85,6 +86,44 @@ type MessageTextProps = {
   onCitationClick: (citation: Citation) => void;
 };
 
+type SourceFooterProps = {
+  citations: Citation[];
+  onClick: (citation: Citation) => void;
+};
+
+function SourceFooter({ citations, onClick }: SourceFooterProps) {
+  if (citations.length === 0) return null;
+
+  // Deduplicate by doc_order, keep highest score per source
+  const unique = new Map<number, Citation>();
+  for (const c of citations) {
+    const existing = unique.get(c.doc_order);
+    if (!existing || c.score > existing.score) {
+      unique.set(c.doc_order, c);
+    }
+  }
+  const sorted = Array.from(unique.values()).sort((a, b) => a.doc_order - b.doc_order);
+
+  return (
+    <div className="mt-2 pt-2 border-t border-slate-100 flex flex-wrap gap-1 items-center">
+      <span className="text-xs text-slate-400">Источники:</span>
+      {sorted.map((c) => (
+        <button
+          key={c.id}
+          type="button"
+          className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs text-slate-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-colors"
+          title={`Сохранить цитату из «${c.filename}»${c.location?.page ? ` (стр. ${c.location.page})` : ''}`}
+          onClick={() => onClick(c)}
+        >
+          <span className="font-mono font-bold text-blue-600">[{c.doc_order}]</span>
+          <span className="truncate max-w-[160px]">{c.filename}</span>
+          {c.location?.page ? <span className="text-slate-400">стр. {c.location.page}</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function MessageText({ text, citations, onCitationClick }: MessageTextProps) {
   const segments = useMemo(() => parseTextWithCitations(text), [text]);
 
@@ -156,38 +195,44 @@ export default function ChatPanel(props: Props) {
 
       <div className="flex-1 overflow-auto space-y-2 min-h-[40vh]">
         {props.messages.length === 0 ? <div className="text-sm text-slate-500">Нет сообщений — начните диалог.</div> : null}
-        {props.messages.map((message) => (
-          <div
-            key={message.id}
-            className={`rounded border p-3 text-sm ${message.role === 'assistant' ? 'bg-white border-slate-200' : 'bg-blue-50 border-blue-200'}`}
-          >
-            {message.role === 'assistant' ? (
-              <div className="space-y-1">
-                <MessageText
-                  text={message.content}
-                  citations={props.citations}
-                  onCitationClick={props.onCitationClick}
-                />
-                {/* Save-to-notes button under each assistant message */}
-                <div className="flex justify-end pt-1">
-                  <button
-                    type="button"
-                    className="text-slate-400 hover:text-slate-600 transition-colors"
-                    title="Сохранить ответ в Заметки"
-                    onClick={() => {
-                      logClientEvent({ event: 'ui.save_to_notes.message', notebookId: props.notebookId });
-                      props.onSaveToNotes(message.content);
-                    }}
-                  >
-                    ↳
-                  </button>
+        {props.messages.map((message) => {
+          const msgCitations = message.role === 'assistant'
+            ? (props.messageCitations.get(message.id) ?? [])
+            : [];
+          return (
+            <div
+              key={message.id}
+              className={`rounded border p-3 text-sm ${message.role === 'assistant' ? 'bg-white border-slate-200' : 'bg-blue-50 border-blue-200'}`}
+            >
+              {message.role === 'assistant' ? (
+                <div className="space-y-1">
+                  <MessageText
+                    text={message.content}
+                    citations={msgCitations}
+                    onCitationClick={props.onCitationClick}
+                  />
+                  <SourceFooter citations={msgCitations} onClick={props.onCitationClick} />
+                  {/* Save-to-notes button under each assistant message */}
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      className="text-slate-400 hover:text-slate-600 transition-colors"
+                      title="Сохранить ответ в Заметки"
+                      onClick={() => {
+                        logClientEvent({ event: 'ui.save_to_notes.message', notebookId: props.notebookId });
+                        props.onSaveToNotes(message.content);
+                      }}
+                    >
+                      ↳
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              message.content
-            )}
-          </div>
-        ))}
+              ) : (
+                message.content
+              )}
+            </div>
+          );
+        })}
         {props.streaming ? (
           <div className="rounded border border-slate-200 bg-white p-3 text-sm">
             <MessageText

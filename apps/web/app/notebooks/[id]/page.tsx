@@ -66,6 +66,8 @@ export default function NotebookWorkspacePage() {
   const { isClearing } = useChatStore();
   const [streaming, setStreaming] = useState('');
   const [citations, setCitations] = useState<Citation[]>([]);
+  const [messageCitations, setMessageCitations] = useState<Map<string, Citation[]>>(new Map());
+  const latestCitationsRef = useRef<Citation[]>([]);
   const [explicitSelection, setExplicitSelection] = useState<string[] | null>(null);
   const closeStreamRef = useRef<(() => void) | null>(null);
 
@@ -189,6 +191,8 @@ export default function NotebookWorkspacePage() {
       queryClient.setQueryData(['messages', notebookId], []);
       setStreaming('');
       setCitations([]);
+      setMessageCitations(new Map());
+      latestCitationsRef.current = [];
       return { clearId };
     },
     onSuccess: (_data, _vars, context) => {
@@ -261,6 +265,7 @@ export default function NotebookWorkspacePage() {
     closeStreamRef.current?.();
     setStreaming('');
     setCitations([]);
+    latestCitationsRef.current = [];
     const streamStartedAt = Date.now();
     const streamId = `${notebookId}-${streamStartedAt}`;
 
@@ -293,11 +298,17 @@ export default function NotebookWorkspacePage() {
           if (shouldIgnoreStream(streamStartedAt)) {
             return;
           }
-          setCitations(CitationsSchema.parse(payload));
+          const parsed = CitationsSchema.parse(payload);
+          setCitations(parsed);
+          latestCitationsRef.current = parsed;
         },
-        onDone: () => {
+        onDone: (messageId) => {
           unregisterStreamCloser(streamId);
           if (!shouldIgnoreStream(streamStartedAt)) {
+            if (messageId) {
+              const cits = latestCitationsRef.current;
+              setMessageCitations((prev) => new Map(prev).set(messageId, cits));
+            }
             queryClient.invalidateQueries({ queryKey: ['messages', notebookId] });
             setStreaming('');
           }
@@ -511,6 +522,7 @@ export default function NotebookWorkspacePage() {
           messages={messages.data}
           streaming={streaming}
           citations={citations}
+          messageCitations={messageCitations}
           onModeChange={(nextMode) => { logClientEvent({ event: 'ui.chat.mode_change', notebookId, metadata: { from: currentMode, to: nextMode } }); setCurrentMode(nextMode as ChatMode); }}
           onAgentChange={(agentId) => { logClientEvent({ event: 'ui.chat.agent_change', notebookId, metadata: { agentId } }); setSelectedAgent(agentId); }}
           onSend={sendMessage}
