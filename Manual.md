@@ -43,7 +43,6 @@ RAG/
 │   ├── notes/                  # Глобальные заметки (JSON)
 │   ├── logs/sessions/          # Логи сессий (app_*.log, ui_*.log)
 │   └── store.db                # Глобальная SQLite БД (ноутбуки, источники, настройки парсинга)
-├── packages/                   # Пустой пакет-заглушка
 ├── scripts/
 │   ├── dev_run.sh              # Скрипт запуска для Linux/macOS
 │   ├── verify.sh               # Скрипт проверки окружения
