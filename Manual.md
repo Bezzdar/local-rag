@@ -227,3 +227,130 @@ apps/web/
 Кнопка `[→]`/`[←]` сворачивает всю панель до 48px, скрывая содержимое.
 
 ---
+
+### 4.5 Рабочее окно ноутбука
+
+**Файл:** `apps/web/app/notebooks/[id]/page.tsx`
+
+Основной экран работы с ноутбуком. Рендерится по маршруту `/notebooks/{notebookId}`.
+
+#### Структура страницы (три зоны)
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ [ConnectionIndicator]                                                    │
+├──────────────────┬─┬───────────────────────────────────┬─┬─────────────┤
+│ ЛЕВАЯ ПАНЕЛЬ     │▌│         ЦЕНТРАЛЬНАЯ ПАНЕЛЬ         │▌│ ПРАВАЯ      │
+│ (SourcesPanel)   │ │         (ChatPanel)                │ │ ПАНЕЛЬ      │
+│                  │R│                                    │R│ (EvidenceP) │
+│ [⟨/⟩]           │e│                                    │e│ [⟩/⟨]      │
+│ Список ноутбуков │s│ [Chat]    [Очистить] [Режим▾]      │s│ [Цитаты]   │
+│ (select)         │i│ ─────────────────────────────────  │i│ [Заметки]  │
+│ Поиск источников │z│ История сообщений                  │z│            │
+│ Upload файла     │e│ Стриминг ответа                    │e│ Сохранённые│
+│ Кнопки действий  │ │ ─────────────────────────────────  │ │ цитаты     │
+│ Список файлов    │L│ [Ввод вопроса...] [Отправить]      │R│ Глобальные │
+│                  │ │                                    │ │ заметки    │
+└──────────────────┴─┴───────────────────────────────────┴─┴─────────────┘
+```
+
+Разделители `▌` — перетаскиваемые (drag-to-resize), реализованы через `startResize('left'|'right')`.
+
+#### Границы размеров панелей
+
+```typescript
+const LEFT_MIN = 240;   // px, минимум левой панели
+const LEFT_MAX = 520;   // px, максимум левой панели
+const RIGHT_MIN = 280;  // px, минимум правой панели
+const RIGHT_MAX = 640;  // px, максимум правой панели
+```
+
+#### Состояние компонента (useState)
+
+| Переменная | Тип | Назначение |
+|---|---|---|
+| `streaming` | `string` | Накапливающийся текст текущего стрима |
+| `citations` | `Citation[]` | Цитаты текущего ответа (обновляются по событию `citations` SSE) |
+| `explicitSelection` | `string[]\|null` | Явно выбранные источники (null = все enabled) |
+| `leftWidth` | `number` | Ширина левой панели в px (default 320) |
+| `rightWidth` | `number` | Ширина правой панели в px (default 360) |
+| `leftCollapsed` | `boolean` | Свёрнута левая панель (44px) |
+| `rightCollapsed` | `boolean` | Свёрнута правая панель (44px) |
+| `sourceConfigModal` | `SourceConfigModalState\|null` | Открыт модал настройки парсинга источника |
+
+#### Сторы, используемые страницей
+
+| Стор | Что берётся |
+|---|---|
+| `useModeStore()` | `currentMode` — текущий режим чата |
+| `useAgentStore()` | `selectedAgentId` — выбранный агент |
+| `useChatStore()` | `isClearing` — активна ли очистка чата |
+
+#### TanStack Query (данные и мутации)
+
+| Хук | Key | Действие |
+|---|---|---|
+| `useQuery` | `['notebooks']` | Список ноутбуков (для select в SourcesPanel) |
+| `useQuery` | `['agents']` | Список агентов (для select в ChatPanel) |
+| `useQuery` | `['sources', notebookId]` | Источники текущего ноутбука |
+| `useQuery` | `['messages', notebookId]` | История чата |
+| `useQuery` | `['notes', notebookId]` | Заметки ноутбука |
+| `useQuery` | `['parsing-settings', notebookId]` | Настройки парсинга (для модала источника) |
+| `useQuery` | `['saved-citations', notebookId]` | Сохранённые цитаты |
+| `useQuery` | `['global-notes']` | Глобальные заметки (cross-notebook) |
+| `useMutation` | `uploadSource` | Загрузка файла через multipart/form-data |
+| `useMutation` | `deleteSources` | Удаление массива источников |
+| `useMutation` | `eraseSource` | Стирание parsing/DB данных источника (файл сохраняется) |
+| `useMutation` | `reparseSource` | Перезапуск индексации источника |
+| `useMutation` | `updateSource` | Обновление `is_enabled` или `individual_config` источника |
+| `useMutation` | `openSource` | Открыть файл системным приложением (через ОС) |
+| `useMutation` | `reorderSources` | Сохранить новый порядок источников (drag-and-drop) |
+| `useMutation` | `createNote` | Создать заметку в ноутбуке |
+| `useMutation` | `saveCitation` | Сохранить цитату (клик по [N] в чате) |
+| `useMutation` | `deleteSavedCitation` | Удалить сохранённую цитату |
+| `useMutation` | `saveGlobalNote` | Сохранить глобальную заметку (кнопка ↳) |
+| `useMutation` | `deleteGlobalNote` | Удалить глобальную заметку |
+| `useMutation` | `clearChat` | Очистить историю чата |
+
+#### Ключевые функции страницы
+
+**`sendMessage(text: string)`** — отправка сообщения в чат:
+1. Логирует событие `ui.message.send_attempt`.
+2. Прерывает предыдущий поток (если был) через `closeStreamRef.current?.()`.
+3. Сбрасывает `streaming` и `citations`.
+4. Строит идентификатор потока `streamId = {notebookId}-{timestamp}`.
+5. Определяет режим `streamMode` из `currentMode`.
+6. Получает `runtimeConfig` (провайдер, модель, base_url, maxHistory).
+7. Вызывает `openChatStream(...)` из `lib/sse.ts`.
+8. Сохраняет функцию закрытия потока в `closeStreamRef.current`.
+
+**`handleToggleSource(sourceId)`** — включение/выключение источника в чате:
+- Управляет `explicitSelection` (null → все, [] → никто, [ids...] → выборочно).
+
+**`handleDeleteSources(sourceIds, confirmText)`** — удаление источников:
+- Вызывает `window.confirm(confirmText)` для подтверждения.
+- После успеха — убирает удалённые ID из `explicitSelection`.
+
+**`startResize(side: 'left'|'right')`** — drag-to-resize панелей:
+- Добавляет глобальные обработчики `mousemove`/`mouseup`.
+- Обновляет `leftWidth`/`rightWidth` с учётом MIN/MAX ограничений.
+- При движении — автоматически разворачивает свёрнутую панель.
+
+#### Модал настройки парсинга источника
+
+Открывается кнопкой `⚙` в строке источника. Содержит поля в зависимости от метода чанкинга:
+
+| Метод | Поля |
+|---|---|
+| `general` | chunk_size, chunk_overlap |
+| `context_enrichment` | chunk_size, chunk_overlap, context_window, use_llm_summary |
+| `hierarchy` | doc_type, chunk_size (fallback) |
+| `pcr` | parent_chunk_size, child_chunk_size |
+| `symbol` | symbol_separator |
+| Все методы | ocr_enabled, ocr_language |
+
+Каждый параметр имеет чекбокс «Глобальный» — если включён, поле отключено и используется значение из глобальных настроек парсинга.
+
+При сохранении вызывает `updateSource.mutate({sourceId, payload: {individual_config: {...}}})`.
+
+---
