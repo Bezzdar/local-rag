@@ -869,9 +869,16 @@ Props: `{ notebookId: string }`.
 apps/api/
 ├── main.py                         # Точка входа FastAPI-приложения
 ├── config.py                       # Конфигурационные константы и пути
-├── schemas.py                      # Pydantic-схемы (DTO)
-├── store.py                        # In-memory хранилище + оркестрация
 ├── logging_setup.py                # Настройка логирования (2 файла: app + ui)
+├── store.py                        # Обратно-совместимый реэкспорт из services/orchestrator
+├── schemas/                        # Pydantic-схемы (DTO) — пакет
+│   ├── __init__.py                 # Реэкспорт всех схем (backward compat)
+│   ├── common.py                   # now_iso()
+│   ├── notebooks.py                # Notebook, CreateNotebookRequest, UpdateNotebookRequest
+│   ├── sources.py                  # Source, ParsingSettings, AddPathRequest, …
+│   ├── chat.py                     # ChatMessage, Citation, CitationLocation, ChatRequest, …
+│   ├── notes.py                    # SavedCitation, GlobalNote, …
+│   └── llm.py                      # IndexStatus
 ├── routers/
 │   ├── notebooks.py                # CRUD ноутбуков + настройки парсинга
 │   ├── sources.py                  # Управление источниками (upload, parse, delete)
@@ -883,14 +890,43 @@ apps/api/
 │   ├── client_events.py            # Получение UI-событий от фронтенда
 │   └── agents.py                   # Список агентов
 └── services/
+    ├── state.py                    # InMemoryState — чистое in-memory хранилище
+    ├── orchestrator.py             # InMemoryStore(InMemoryState) — оркестрация; синглтон store
+    ├── prompts.py                  # Системные промпты, build_rag_context, build_chat_history
     ├── chat_modes.py               # Режимы чата, пороги релевантности
-    ├── model_chat.py               # Генерация ответов + системные промпты
+    ├── model_chat.py               # Генерация ответов LLM (stream + sync)
     ├── search_service.py           # Гибридный поиск (vector + FTS) + RRF
     ├── index_service.py            # Оркестрация индексации
-    ├── parse_service.py            # Парсинг документов (PDF/DOCX/XLSX/TXT)
-    ├── notebook_db.py              # SQLite БД ноутбука (документы, чанки, поиск)
     ├── global_db.py                # Глобальная SQLite БД (ноутбуки, источники)
-    └── embedding_service.py        # Движок эмбеддингов (Ollama, OpenAI-compatible)
+    ├── embedding_service.py        # Движок эмбеддингов (Ollama, OpenAI-compatible)
+    ├── parse/                      # Парсинг документов — пакет
+    │   ├── __init__.py             # Публичный API: DocumentParser, DocumentMetadata, …
+    │   ├── models.py               # Dataclasses и enum: ParsedChunk, ParserConfig, ChunkType, …
+    │   ├── constants.py            # CHUNKING_METHODS, DOC_TYPES, паттерны заголовков
+    │   ├── utils.py                # Вспомогательные функции: токенизация, сортировка колонок
+    │   ├── serializer.py           # save_parsing_result / load_parsing_result (JSON)
+    │   ├── parser.py               # DocumentParser — оркестратор (тонкий)
+    │   ├── extractors/             # Стратегии извлечения текста из файлов
+    │   │   ├── __init__.py         # get_extractor(suffix, config) — фабрика
+    │   │   ├── base.py             # BaseExtractor (ABC)
+    │   │   ├── text.py             # TextExtractor (.txt, .md)
+    │   │   ├── docx.py             # DocxExtractor (.docx)
+    │   │   ├── pdf.py              # PdfExtractor (.pdf)
+    │   │   └── ocr.py              # OcrExtractor (OCR через pytesseract)
+    │   └── chunkers/               # Стратегии разбиения на чанки
+    │       ├── __init__.py         # get_chunker(config) — фабрика
+    │       ├── base.py             # BaseChunker (ABC)
+    │       ├── general.py          # GeneralChunker — фиксированный размер с перекрытием
+    │       ├── context_enrichment.py # ContextEnrichmentChunker — обогащение контекстом
+    │       ├── hierarchy.py        # HierarchyChunker — иерархия заголовков
+    │       ├── pcr.py              # PCRChunker — parent-child retrieval
+    │       └── symbol.py           # SymbolChunker — разбиение по символу-разделителю
+    └── notebook_db/                # SQLite БД ноутбука — пакет
+        ├── __init__.py             # Публичный API: NotebookDB, db_for_notebook
+        ├── schema.py               # configure_connection(), migrate() — DDL + PRAGMA
+        ├── documents.py            # upsert_document, set_document_enabled, set_document_tags, …
+        ├── search.py               # search_fts(), search_vector()
+        └── db.py                   # Класс NotebookDB + фабрика db_for_notebook()
 ```
 
 ---

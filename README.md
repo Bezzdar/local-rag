@@ -261,12 +261,62 @@ Frontend использует **Next.js 14**, **React 18**, **TanStack Query**, 
 RAG/
 ├── apps/
 │   ├── api/               # FastAPI backend
-│   │   ├── main.py        # Сборка приложения, CORS, роутеры
-│   │   ├── config.py      # Пути к data/*, лимиты upload
-│   │   ├── schemas.py     # Pydantic-контракты API
-│   │   ├── store.py       # In-memory state, оркестрация индексации
-│   │   ├── routers/       # notebooks, sources, chat, notes
-│   │   ├── services/      # parse_service, index_service, search_service
+│   │   ├── main.py                    # Точка входа FastAPI
+│   │   ├── config.py                  # Константы и пути
+│   │   ├── logging_setup.py           # Настройка логирования
+│   │   ├── store.py                   # Реэкспорт синглтона store
+│   │   ├── schemas/                   # Pydantic-контракты API
+│   │   │   ├── __init__.py            # Реэкспорт всех схем
+│   │   │   ├── notebooks.py           # Схемы ноутбуков
+│   │   │   ├── sources.py             # Схемы источников
+│   │   │   ├── chat.py                # Схемы чата и цитат
+│   │   │   ├── notes.py               # Схемы заметок и сохранённых цитат
+│   │   │   ├── llm.py                 # Схемы LLM-статуса
+│   │   │   └── common.py              # Общие утилиты (now_iso)
+│   │   ├── routers/                   # HTTP-роутеры (тонкий слой)
+│   │   │   ├── notebooks.py           # CRUD ноутбуков
+│   │   │   ├── sources.py             # Загрузка и индексация источников
+│   │   │   ├── chat.py                # Чат и SSE-стриминг
+│   │   │   ├── citations.py           # Сохранённые цитаты
+│   │   │   ├── global_notes.py        # Глобальные заметки
+│   │   │   ├── llm.py                 # Статус индексации
+│   │   │   ├── client_events.py       # Клиентские события
+│   │   │   └── agents.py              # Агентные запросы
+│   │   ├── services/                  # Бизнес-логика
+│   │   │   ├── state.py               # In-memory хранилище: структуры данных
+│   │   │   ├── orchestrator.py        # Оркестрация индексации и сервисов
+│   │   │   ├── prompts.py             # Системные промпты и сборка контекста
+│   │   │   ├── model_chat.py          # Вызовы LLM (Ollama/OpenAI)
+│   │   │   ├── search_service.py      # Гибридный поиск (vector + FTS + RRF)
+│   │   │   ├── embedding_service.py   # Генерация эмбеддингов
+│   │   │   ├── index_service.py       # Координация парсинга
+│   │   │   ├── global_db.py           # SQLite: ноутбуки, источники, настройки
+│   │   │   ├── chat_modes.py          # Режимы чата и пороги релевантности
+│   │   │   ├── parse_service.py       # Реэкспорт модуля parse/
+│   │   │   ├── parse/                 # Модуль парсинга документов
+│   │   │   │   ├── models.py          # Типы данных: ChunkType, ParsedChunk и др.
+│   │   │   │   ├── constants.py       # CHUNKING_METHODS, _HIERARCHY_PATTERNS
+│   │   │   │   ├── utils.py           # Токенизация, подсчёт токенов
+│   │   │   │   ├── serializer.py      # Сохранение/загрузка JSON чанков
+│   │   │   │   ├── parser.py          # DocumentParser — оркестратор
+│   │   │   │   ├── extractors/        # Стратегии извлечения текста по формату
+│   │   │   │   │   ├── base.py        # ABC BaseExtractor
+│   │   │   │   │   ├── text.py        # TXT, MD
+│   │   │   │   │   ├── docx.py        # DOCX
+│   │   │   │   │   ├── pdf.py         # PDF text-layer
+│   │   │   │   │   └── ocr.py         # PDF OCR (pytesseract + opencv)
+│   │   │   │   └── chunkers/          # Стратегии разбивки на чанки
+│   │   │   │       ├── base.py        # ABC BaseChunker
+│   │   │   │       ├── general.py     # GeneralChunker (базовый)
+│   │   │   │       ├── context_enrichment.py  # Обогащение контекстом соседей
+│   │   │   │       ├── hierarchy.py   # Иерархическое разбиение
+│   │   │   │       ├── pcr.py         # Parent-Child Retrieval
+│   │   │   │       └── symbol.py      # Разбиение по символу-разделителю
+│   │   │   └── notebook_db/           # SQLite: чанки, эмбеддинги, поиск
+│   │   │       ├── schema.py          # DDL и миграции
+│   │   │       ├── documents.py       # CRUD документов
+│   │   │       ├── search.py          # FTS и векторный поиск
+│   │   │       └── db.py              # NotebookDB — оркестратор соединения
 │   │   └── requirements.txt
 │   └── web/               # Next.js frontend
 │       ├── app/           # Страницы (notebooks list, notebook workspace)
