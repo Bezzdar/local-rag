@@ -304,7 +304,7 @@ echo  Ожидание запуска API (3 сек)...
 timeout /t 3 /nobreak > nul
 
 :: ---------- npm install ----------
-if not exist "%ROOT%\apps\web\node_modules" (
+if not exist "%ROOT%\apps\web\node_modules\.bin\next.cmd" (
     echo  Установка frontend-зависимостей (npm install)...
     cd /d "%ROOT%\apps\web"
     call npm install --no-fund --no-audit
@@ -364,6 +364,9 @@ echo  Удаление пользовательских данных...
 if exist "data\docs"      rmdir /s /q "data\docs"
 if exist "data\notebooks" rmdir /s /q "data\notebooks"
 if exist "data\parsing"   rmdir /s /q "data\parsing"
+if exist "data\citations" rmdir /s /q "data\citations"
+if exist "data\notes"     rmdir /s /q "data\notes"
+if exist "data\store.db"  del /f /q "data\store.db"
 
 echo  Сброс конфигурации frontend...
 if exist ".env.example" (

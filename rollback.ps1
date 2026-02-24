@@ -53,6 +53,8 @@ $targets = @(
     [PSCustomObject]@{ Path = 'data\docs';      Desc = 'Загруженные документы' }
     [PSCustomObject]@{ Path = 'data\notebooks'; Desc = 'Базы данных ноутбуков' }
     [PSCustomObject]@{ Path = 'data\parsing';   Desc = 'Артефакты парсинга'    }
+    [PSCustomObject]@{ Path = 'data\citations'; Desc = 'Цитаты'                }
+    [PSCustomObject]@{ Path = 'data\notes';     Desc = 'Заметки'               }
 )
 
 Write-Host "  Удаление пользовательских данных..." -ForegroundColor Cyan
@@ -65,6 +67,15 @@ foreach ($t in $targets) {
     } else {
         Write-Host "  [--] Не найдено (пропущено): $($t.Path)" -ForegroundColor DarkGray
     }
+}
+
+# Удаляем главную SQLite-базу (список ноутбуков, источников, настроек парсинга)
+$storeDb = Join-Path $ROOT 'data\store.db'
+if (Test-Path $storeDb) {
+    Remove-Item $storeDb -Force
+    Write-Host "  [OK] Удалено: data\store.db  (Глобальная база данных)" -ForegroundColor Green
+} else {
+    Write-Host "  [--] Не найдено (пропущено): data\store.db" -ForegroundColor DarkGray
 }
 
 # ── Сброс .env.local ─────────────────────────────────────────────
