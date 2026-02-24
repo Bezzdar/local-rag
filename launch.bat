@@ -297,7 +297,7 @@ if not exist "apps\web\.env.local" (
 
 :: ---------- API backend ----------
 echo  Запуск API backend (uvicorn)...
-start "RAG — API Backend" cmd /k "cd /d "%ROOT%" && ".venv\Scripts\activate.bat" && python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8000"
+start "RAG — API Backend" cmd /k "cd /d ""%ROOT%"" && ""%ROOT%\.venv\Scripts\python.exe"" -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8000"
 
 :: Дать API время на старт
 echo  Ожидание запуска API (3 сек)...
@@ -320,7 +320,7 @@ if not exist "%ROOT%\apps\web\node_modules\.bin\next.cmd" (
 
 :: ---------- Web frontend ----------
 echo  Запуск Web frontend (npm run dev)...
-start "RAG — Web Frontend" cmd /k "cd /d "%ROOT%\apps\web" && npm run dev"
+start "RAG — Web Frontend" cmd /k "cd /d ""%ROOT%\apps\web"" && npm run dev"
 
 echo.
 echo  ════════════════════════════════════════════
