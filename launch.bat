@@ -76,14 +76,35 @@ if not defined _NODE_EXE (
 )
 
 :: Получаем версию
+set "_NODE_VER="
+set "_NODE_MAJOR="
+set "_NODE_MINOR="
 for /f "tokens=*" %%v in ('"%_NODE_EXE%" --version 2^>nul') do set "_NODE_VER=%%v"
 for /f "tokens=1,2 delims=." %%a in ("%_NODE_VER:~1%") do (
     set "_NODE_MAJOR=%%a"
     set "_NODE_MINOR=%%b"
 )
 
+if not defined _NODE_VER (
+    echo.
+    echo  [!] Не удалось определить версию Node.js через "%_NODE_EXE%".
+    echo      Закройте и откройте это окно заново. Если не поможет — переустановите Node.js LTS.
+    echo.
+    pause
+    exit /b 1
+)
+
+if not defined _NODE_MAJOR (
+    echo.
+    echo  [!] Невозможно разобрать версию Node.js: %_NODE_VER%
+    echo      Ожидается формат вроде v20.11.1.
+    echo.
+    pause
+    exit /b 1
+)
+
 :: Нечётные (не-LTS) версии официально не поддерживаются npm-экосистемой
-if %_NODE_MAJOR%==19 (
+if "%_NODE_MAJOR%"=="19" (
     echo.
     echo  [!] Node.js %_NODE_VER% — нечётная (не-LTS) версия, не поддерживается.
     echo      Установите Node.js 22 LTS или 20 LTS: https://nodejs.org/
@@ -92,7 +113,7 @@ if %_NODE_MAJOR%==19 (
     pause
     exit /b 1
 )
-if %_NODE_MAJOR%==21 (
+if "%_NODE_MAJOR%"=="21" (
     echo.
     echo  [!] Node.js %_NODE_VER% — нечётная (не-LTS) версия, не поддерживается.
     echo      Установите Node.js 22 LTS или 20 LTS: https://nodejs.org/
@@ -103,7 +124,7 @@ if %_NODE_MAJOR%==21 (
 )
 
 :: Минимальная поддерживаемая версия — 20 (Node.js 18 снят с поддержки в апреле 2025)
-if %_NODE_MAJOR% LSS 20 (
+if "%_NODE_MAJOR%" LSS "20" (
     echo.
     echo  [!] Node.js %_NODE_VER% устарел (поддержка прекращена).
     echo      Требуется Node.js 20 LTS (минимум) или 22 LTS (рекомендуется).
@@ -115,7 +136,7 @@ if %_NODE_MAJOR% LSS 20 (
 )
 
 :: Для Node.js 20: требуется минимум 20.9.0 (иначе eslint не встанет)
-if %_NODE_MAJOR%==20 if %_NODE_MINOR% LSS 9 (
+if "%_NODE_MAJOR%"=="20" if "%_NODE_MINOR%" LSS "9" (
     echo.
     echo  [!] Node.js %_NODE_VER% — слишком старая сборка ветки 20.
     echo      Требуется Node.js 20.9.0 или новее (либо Node.js 22 LTS).
@@ -152,7 +173,14 @@ if not defined _PY_EXE (
 :: Проверяем мажорную версию
 for /f "tokens=2" %%v in ('"%_PY_EXE%" --version 2^>^&1') do set "_PY_VER=%%v"
 for /f "tokens=1 delims=." %%a in ("%_PY_VER%") do set "_PY_MAJOR=%%a"
-if %_PY_MAJOR% LSS 3 (
+if not defined _PY_MAJOR (
+    echo.
+    echo  [!] Невозможно разобрать версию Python: %_PY_VER%
+    echo.
+    pause
+    exit /b 1
+)
+if "%_PY_MAJOR%" LSS "3" (
     echo.
     echo  [!] Обнаружен Python %_PY_VER%. Требуется Python 3.11+.
     echo      Скачайте: https://www.python.org/
