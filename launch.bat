@@ -38,6 +38,135 @@ goto :MAIN_MENU
 
 
 :: ================================================================
+::  ПРОВЕРКА NODE.JS  (вызывать: call :CHECK_NODE || goto :MAIN_MENU)
+:: ================================================================
+:CHECK_NODE
+set "_NODE_EXE="
+
+:: 1) Попытка найти node в PATH
+for /f "tokens=*" %%v in ('node --version 2^>nul') do set "_NODE_EXE=node"
+
+:: 2) Если не нашли — ищем в стандартных папках установки
+if not defined _NODE_EXE (
+    for %%p in (
+        "%ProgramFiles%\nodejs\node.exe"
+        "%ProgramFiles(x86)%\nodejs\node.exe"
+        "%LOCALAPPDATA%\Programs\nodejs\node.exe"
+    ) do (
+        if exist %%p (
+            set "_NODE_EXE=%%~p"
+            goto :_node_found
+        )
+    )
+)
+
+:_node_found
+if not defined _NODE_EXE (
+    echo.
+    echo  [!] Node.js не обнаружен ни в PATH, ни в стандартных папках!
+    echo.
+    echo      Решение:
+    echo        1. Установите Node.js 22 LTS (рекомендуется) или 20 LTS:
+    echo           https://nodejs.org/
+    echo        2. При установке отметьте «Add to PATH»
+    echo        3. ЗАКРОЙТЕ и откройте это окно заново после установки
+    echo.
+    pause
+    exit /b 1
+)
+
+:: Получаем версию
+for /f "tokens=*" %%v in ('"%_NODE_EXE%" --version 2^>nul') do set "_NODE_VER=%%v"
+for /f "tokens=1,2 delims=." %%a in ("%_NODE_VER:~1%") do (
+    set "_NODE_MAJOR=%%a"
+    set "_NODE_MINOR=%%b"
+)
+
+:: Нечётные (не-LTS) версии официально не поддерживаются npm-экосистемой
+if %_NODE_MAJOR%==19 (
+    echo.
+    echo  [!] Node.js %_NODE_VER% — нечётная (не-LTS) версия, не поддерживается.
+    echo      Установите Node.js 22 LTS или 20 LTS: https://nodejs.org/
+    echo.
+    set "_NODE_VER=" & set "_NODE_MAJOR=" & set "_NODE_MINOR=" & set "_NODE_EXE="
+    pause
+    exit /b 1
+)
+if %_NODE_MAJOR%==21 (
+    echo.
+    echo  [!] Node.js %_NODE_VER% — нечётная (не-LTS) версия, не поддерживается.
+    echo      Установите Node.js 22 LTS или 20 LTS: https://nodejs.org/
+    echo.
+    set "_NODE_VER=" & set "_NODE_MAJOR=" & set "_NODE_MINOR=" & set "_NODE_EXE="
+    pause
+    exit /b 1
+)
+
+:: Минимальная поддерживаемая версия — 20 (Node.js 18 снят с поддержки в апреле 2025)
+if %_NODE_MAJOR% LSS 20 (
+    echo.
+    echo  [!] Node.js %_NODE_VER% устарел (поддержка прекращена).
+    echo      Требуется Node.js 20 LTS (минимум) или 22 LTS (рекомендуется).
+    echo      Скачайте: https://nodejs.org/
+    echo.
+    set "_NODE_VER=" & set "_NODE_MAJOR=" & set "_NODE_MINOR=" & set "_NODE_EXE="
+    pause
+    exit /b 1
+)
+
+:: Для Node.js 20: требуется минимум 20.9.0 (иначе eslint не встанет)
+if %_NODE_MAJOR%==20 if %_NODE_MINOR% LSS 9 (
+    echo.
+    echo  [!] Node.js %_NODE_VER% — слишком старая сборка ветки 20.
+    echo      Требуется Node.js 20.9.0 или новее (либо Node.js 22 LTS).
+    echo      Скачайте: https://nodejs.org/
+    echo.
+    set "_NODE_VER=" & set "_NODE_MAJOR=" & set "_NODE_MINOR=" & set "_NODE_EXE="
+    pause
+    exit /b 1
+)
+
+echo  [OK] Node.js %_NODE_VER% (путь: %_NODE_EXE%)
+set "_NODE_MAJOR=" & set "_NODE_MINOR="
+exit /b 0
+
+
+:: ================================================================
+::  ПРОВЕРКА PYTHON  (вызывать: call :CHECK_PYTHON || goto :MAIN_MENU)
+:: ================================================================
+:CHECK_PYTHON
+set "_PY_EXE="
+for /f "tokens=*" %%v in ('python --version 2^>nul') do set "_PY_EXE=python"
+if not defined _PY_EXE (
+    for /f "tokens=*" %%v in ('python3 --version 2^>nul') do set "_PY_EXE=python3"
+)
+if not defined _PY_EXE (
+    echo.
+    echo  [!] Python не обнаружен!
+    echo      Установите Python 3.11+ с https://www.python.org/
+    echo      При установке отметьте «Add Python to PATH».
+    echo.
+    pause
+    exit /b 1
+)
+:: Проверяем мажорную версию
+for /f "tokens=2" %%v in ('"%_PY_EXE%" --version 2^>^&1') do set "_PY_VER=%%v"
+for /f "tokens=1 delims=." %%a in ("%_PY_VER%") do set "_PY_MAJOR=%%a"
+if %_PY_MAJOR% LSS 3 (
+    echo.
+    echo  [!] Обнаружен Python %_PY_VER%. Требуется Python 3.11+.
+    echo      Скачайте: https://www.python.org/
+    echo.
+    set "_PY_EXE=" & set "_PY_VER=" & set "_PY_MAJOR="
+    pause
+    exit /b 1
+)
+echo  [OK] Python %_PY_VER%
+set "_PY_VER=" & set "_PY_MAJOR="
+exit /b 0
+
+
+:: ================================================================
 ::  1) ОБНОВЛЕНИЕ С GITHUB
 :: ================================================================
 :UPDATE
@@ -47,27 +176,13 @@ echo  ── Обновление с GitHub ────────────
 echo.
 cd /d "%ROOT%"
 
-:: Проверка наличия и версии Node.js
-for /f "tokens=*" %%v in ('node --version 2^>nul') do set "_NODE_VER=%%v"
-if not defined _NODE_VER (
-    echo  [!] Node.js не найден!
-    echo      Установите Node.js 20 LTS: https://nodejs.org/
-    echo.
-    pause
-    goto :MAIN_MENU
-)
-for /f "tokens=1 delims=." %%a in ("%_NODE_VER:~1%") do set "_NODE_MAJOR=%%a"
-if %_NODE_MAJOR% LSS 18 (
-    echo  [!] Версия Node.js слишком старая: %_NODE_VER%
-    echo      Требуется Node.js 18+ (рекомендуется 20 LTS)
-    echo      Скачайте с https://nodejs.org/
-    echo.
-    set "_NODE_VER=" & set "_NODE_MAJOR="
-    pause
-    goto :MAIN_MENU
-)
-set "_NODE_VER=" & set "_NODE_MAJOR="
+call :CHECK_NODE
+if %errorlevel% neq 0 goto :MAIN_MENU
 
+call :CHECK_PYTHON
+if %errorlevel% neq 0 goto :MAIN_MENU
+
+echo.
 echo  [1/4] git pull --rebase...
 git pull --rebase
 if %errorlevel% neq 0 (
@@ -83,7 +198,7 @@ echo.
 echo  [2/4] Обновление backend-зависимостей (pip)...
 if not exist ".venv\Scripts\python.exe" (
     echo  Создание виртуального окружения...
-    python -m venv .venv
+    "%_PY_EXE%" -m venv .venv
 )
 ".venv\Scripts\python.exe" -m pip install -q --upgrade pip
 ".venv\Scripts\python.exe" -m pip install -q -r apps\api\requirements.txt
@@ -96,7 +211,11 @@ if %errorlevel% neq 0 (
 echo.
 echo  [3/4] Обновление frontend-зависимостей (npm)...
 cd /d "%ROOT%\apps\web"
-npm install --prefer-offline 2>&1
+if exist "node_modules" rmdir /s /q "node_modules"
+"%_NODE_EXE%" "%APPDATA%\npm\node_modules\npm\bin\npm-cli.js" install --no-fund --no-audit 2>nul
+if %errorlevel% neq 0 (
+    npm install --no-fund --no-audit
+)
 if %errorlevel% neq 0 (
     echo  [!] npm install завершился с ошибкой.
     cd /d "%ROOT%"
@@ -107,12 +226,14 @@ if %errorlevel% neq 0 (
 echo.
 echo  [4/4] Очистка кэша Next.js (.next)...
 if exist "%ROOT%\.next" rmdir /s /q "%ROOT%\.next"
+if exist "%ROOT%\apps\web\.next" rmdir /s /q "%ROOT%\apps\web\.next"
 
 cd /d "%ROOT%"
 echo.
 echo  Обновление успешно завершено!
 echo  Перезапустите программу если она была запущена.
 echo.
+set "_NODE_EXE=" & set "_PY_EXE="
 pause
 goto :MAIN_MENU
 
@@ -127,37 +248,31 @@ echo  ── Запуск программы ───────────�
 echo.
 cd /d "%ROOT%"
 
-:: Проверка наличия и версии Node.js
-for /f "tokens=*" %%v in ('node --version 2^>nul') do set "_NODE_VER=%%v"
-if not defined _NODE_VER (
-    echo  [!] Node.js не найден!
-    echo      Установите Node.js 20 LTS: https://nodejs.org/
-    echo.
-    pause
-    goto :MAIN_MENU
-)
-for /f "tokens=1 delims=." %%a in ("%_NODE_VER:~1%") do set "_NODE_MAJOR=%%a"
-if %_NODE_MAJOR% LSS 18 (
-    echo  [!] Версия Node.js слишком старая: %_NODE_VER%
-    echo      Требуется Node.js 18+ (рекомендуется 20 LTS)
-    echo      Скачайте с https://nodejs.org/
-    echo.
-    set "_NODE_VER=" & set "_NODE_MAJOR="
-    pause
-    goto :MAIN_MENU
-)
-set "_NODE_VER=" & set "_NODE_MAJOR="
+call :CHECK_NODE
+if %errorlevel% neq 0 goto :MAIN_MENU
+
+call :CHECK_PYTHON
+if %errorlevel% neq 0 goto :MAIN_MENU
 
 :: Создать venv если не существует
 if not exist ".venv\Scripts\python.exe" (
     echo  Создание виртуального окружения Python...
-    python -m venv .venv
+    "%_PY_EXE%" -m venv .venv
     echo.
 )
 
 :: Установить/проверить зависимости backend
 echo  Проверка зависимостей backend...
+".venv\Scripts\python.exe" -m pip install -q --upgrade pip
 ".venv\Scripts\python.exe" -m pip install -q -r apps\api\requirements.txt
+if %errorlevel% neq 0 (
+    echo.
+    echo  [!] Ошибка при установке Python-зависимостей.
+    echo      Попробуйте: удалите папку .venv и запустите снова.
+    echo.
+    pause
+    goto :MAIN_MENU
+)
 echo.
 
 :: Создать .env.local если не существует
@@ -178,7 +293,7 @@ timeout /t 3 /nobreak > nul
 if not exist "%ROOT%\apps\web\node_modules" (
     echo  Установка frontend-зависимостей (npm install)...
     cd /d "%ROOT%\apps\web"
-    npm install 2>&1
+    npm install --no-fund --no-audit
     if %errorlevel% neq 0 (
         echo  [!] npm install завершился с ошибкой.
         cd /d "%ROOT%"
@@ -199,6 +314,7 @@ echo    API:  http://127.0.0.1:8000
 echo    Web:  http://localhost:3000
 echo    Docs: http://127.0.0.1:8000/docs
 echo.
+set "_NODE_EXE=" & set "_PY_EXE="
 pause
 goto :MAIN_MENU
 
