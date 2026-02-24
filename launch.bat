@@ -29,20 +29,20 @@ echo    4.  Логи
 echo    0.  Выход
 echo.
 choice /c 12340 /n /m "  Ваш выбор: "
-if %errorlevel%==1 goto :UPDATE
-if %errorlevel%==2 goto :START
-if %errorlevel%==3 goto :RESET
-if %errorlevel%==4 goto :LOGS_MENU
-if %errorlevel%==5 goto :EXIT
+set "_CHOICE=!errorlevel!"
+if "!_CHOICE!"=="1" goto :UPDATE
+if "!_CHOICE!"=="2" goto :START
+if "!_CHOICE!"=="3" goto :RESET
+if "!_CHOICE!"=="4" goto :LOGS_MENU
+if "!_CHOICE!"=="5" goto :EXIT
 goto :MAIN_MENU
 
 
 :: ================================================================
-::  ПРОВЕРКА NODE.JS  (вызывать: call :CHECK_NODE || goto :MAIN_MENU)
+::  ПРОВЕРКА NODE.JS
 :: ================================================================
 :CHECK_NODE
 set "_NODE_EXE="
-set "_NPM_CLI="
 
 :: 1) Попытка найти node в PATH
 for /f "tokens=*" %%v in ('node --version 2^>nul') do set "_NODE_EXE=node"
@@ -67,7 +67,7 @@ if not defined _NODE_EXE (
     echo  [!] Node.js не обнаружен ни в PATH, ни в стандартных папках!
     echo.
     echo      Решение:
-    echo        1. Установите Node.js 22 LTS (рекомендуется) или 20 LTS:
+    echo        1. Установите Node.js 22 LTS или 20 LTS:
     echo           https://nodejs.org/
     echo        2. При установке отметьте «Add to PATH»
     echo        3. ЗАКРОЙТЕ и откройте это окно заново после установки
@@ -81,15 +81,15 @@ set "_NODE_VER="
 set "_NODE_MAJOR="
 set "_NODE_MINOR="
 for /f "tokens=*" %%v in ('"%_NODE_EXE%" --version 2^>nul') do set "_NODE_VER=%%v"
-for /f "tokens=1,2 delims=." %%a in ("%_NODE_VER:~1%") do (
+for /f "tokens=1,2 delims=." %%a in ("!_NODE_VER:~1!") do (
     set "_NODE_MAJOR=%%a"
     set "_NODE_MINOR=%%b"
 )
 
 if not defined _NODE_VER (
     echo.
-    echo  [!] Не удалось определить версию Node.js через "%_NODE_EXE%".
-    echo      Закройте и откройте это окно заново. Если не поможет — переустановите Node.js LTS.
+    echo  [!] Не удалось определить версию Node.js через "!_NODE_EXE!".
+    echo      Закройте и откройте это окно заново.
     echo.
     pause
     exit /b 1
@@ -97,80 +97,52 @@ if not defined _NODE_VER (
 
 if not defined _NODE_MAJOR (
     echo.
-    echo  [!] Невозможно разобрать версию Node.js: %_NODE_VER%
-    echo      Ожидается формат вроде v20.11.1.
+    echo  [!] Невозможно разобрать версию Node.js: !_NODE_VER!
     echo.
     pause
     exit /b 1
 )
 
-:: Нечётные (не-LTS) версии официально не поддерживаются npm-экосистемой
-if "%_NODE_MAJOR%"=="19" (
-    echo.
-    echo  [!] Node.js %_NODE_VER% — нечётная (не-LTS) версия, не поддерживается.
+:: Нечётные (не-LTS) версии
+if "!_NODE_MAJOR!"=="19" (
+    echo  [!] Node.js !_NODE_VER! — нечётная версия, не поддерживается.
     echo      Установите Node.js 22 LTS или 20 LTS: https://nodejs.org/
-    echo.
     set "_NODE_VER=" & set "_NODE_MAJOR=" & set "_NODE_MINOR=" & set "_NODE_EXE="
     pause
     exit /b 1
 )
-if "%_NODE_MAJOR%"=="21" (
-    echo.
-    echo  [!] Node.js %_NODE_VER% — нечётная (не-LTS) версия, не поддерживается.
+if "!_NODE_MAJOR!"=="21" (
+    echo  [!] Node.js !_NODE_VER! — нечётная версия, не поддерживается.
     echo      Установите Node.js 22 LTS или 20 LTS: https://nodejs.org/
-    echo.
     set "_NODE_VER=" & set "_NODE_MAJOR=" & set "_NODE_MINOR=" & set "_NODE_EXE="
     pause
     exit /b 1
 )
 
-:: Минимальная поддерживаемая версия — 20 (Node.js 18 снят с поддержки в апреле 2025)
-if "%_NODE_MAJOR%" LSS "20" (
-    echo.
-    echo  [!] Node.js %_NODE_VER% устарел (поддержка прекращена).
-    echo      Требуется Node.js 20 LTS (минимум) или 22 LTS (рекомендуется).
-    echo      Скачайте: https://nodejs.org/
-    echo.
-    set "_NODE_VER=" & set "_NODE_MAJOR=" & set "_NODE_MINOR=" & set "_NODE_EXE="
+:: Минимальная версия — 20
+if !_NODE_MAJOR! LSS 20 (
+    echo  [!] Node.js !_NODE_VER! устарел. Требуется 20 LTS+ или 22 LTS.
+    set "_NODE_EXE=" & set "_NODE_VER=" & set "_NODE_MAJOR=" & set "_NODE_MINOR="
     pause
     exit /b 1
 )
 
-:: Для Node.js 20: требуется минимум 20.9.0 (иначе eslint не встанет)
-if "%_NODE_MAJOR%"=="20" if "%_NODE_MINOR%" LSS "9" (
-    echo.
-    echo  [!] Node.js %_NODE_VER% — слишком старая сборка ветки 20.
-    echo      Требуется Node.js 20.9.0 или новее (либо Node.js 22 LTS).
-    echo      Скачайте: https://nodejs.org/
-    echo.
-    set "_NODE_VER=" & set "_NODE_MAJOR=" & set "_NODE_MINOR=" & set "_NODE_EXE="
+:: Для Node.js 20: минимум 20.9.0
+if "!_NODE_MAJOR!"=="20" if !_NODE_MINOR! LSS 9 (
+    echo  [!] Node.js !_NODE_VER! — слишком старая сборка 20.
+    echo      Требуется 20.9.0+ или Node.js 22 LTS.
+    set "_NODE_EXE=" & set "_NODE_VER=" & set "_NODE_MAJOR=" & set "_NODE_MINOR="
     pause
     exit /b 1
 )
 
-echo  [OK] Node.js %_NODE_VER% (путь: %_NODE_EXE%)
-
-:: Пытаемся определить npm-cli.js, чтобы запускать npm даже без PATH
-for %%p in (
-    "%APPDATA%\npm\node_modules\npm\bin\npm-cli.js"
-    "%ProgramFiles%\nodejs\node_modules\npm\bin\npm-cli.js"
-    "%ProgramFiles(x86)%\nodejs\node_modules\npm\bin\npm-cli.js"
-) do (
-    if not defined _NPM_CLI if exist %%p set "_NPM_CLI=%%~p"
-)
-
-if defined _NPM_CLI (
-    echo  [OK] npm-cli.js найден: %_NPM_CLI%
-) else (
-    echo  [i] npm-cli.js не найден в стандартных путях, будет использован npm из PATH.
-)
-
+echo  [OK] Node.js !_NODE_VER! (путь: !_NODE_EXE!)
 set "_NODE_MAJOR=" & set "_NODE_MINOR="
 exit /b 0
 
 
 :: ================================================================
-::  ПРОВЕРКА PYTHON  (вызывать: call :CHECK_PYTHON || goto :MAIN_MENU)
+::  ПРОВЕРКА PYTHON
 :: ================================================================
 :CHECK_PYTHON
 set "_PY_EXE="
@@ -187,26 +159,20 @@ if not defined _PY_EXE (
     pause
     exit /b 1
 )
-:: Проверяем мажорную версию
-for /f "tokens=2" %%v in ('"%_PY_EXE%" --version 2^>^&1') do set "_PY_VER=%%v"
-for /f "tokens=1 delims=." %%a in ("%_PY_VER%") do set "_PY_MAJOR=%%a"
+for /f "tokens=2" %%v in ('"!_PY_EXE!" --version 2^>^&1') do set "_PY_VER=%%v"
+for /f "tokens=1 delims=." %%a in ("!_PY_VER!") do set "_PY_MAJOR=%%a"
 if not defined _PY_MAJOR (
-    echo.
-    echo  [!] Невозможно разобрать версию Python: %_PY_VER%
-    echo.
+    echo  [!] Невозможно разобрать версию Python: !_PY_VER!
     pause
     exit /b 1
 )
-if "%_PY_MAJOR%" LSS "3" (
-    echo.
-    echo  [!] Обнаружен Python %_PY_VER%. Требуется Python 3.11+.
-    echo      Скачайте: https://www.python.org/
-    echo.
+if !_PY_MAJOR! LSS 3 (
+    echo  [!] Обнаружен Python !_PY_VER!. Требуется Python 3.11+.
     set "_PY_EXE=" & set "_PY_VER=" & set "_PY_MAJOR="
     pause
     exit /b 1
 )
-echo  [OK] Python %_PY_VER%
+echo  [OK] Python !_PY_VER!
 set "_PY_VER=" & set "_PY_MAJOR="
 exit /b 0
 
@@ -222,18 +188,17 @@ echo.
 cd /d "%ROOT%"
 
 call :CHECK_NODE
-if %errorlevel% neq 0 goto :MAIN_MENU
+if !errorlevel! neq 0 goto :MAIN_MENU
 
 call :CHECK_PYTHON
-if %errorlevel% neq 0 goto :MAIN_MENU
+if !errorlevel! neq 0 goto :MAIN_MENU
 
 echo.
 echo  [1/4] git pull --rebase...
 git pull --rebase
-if %errorlevel% neq 0 (
+if !errorlevel! neq 0 (
     echo.
-    echo  [!] git pull завершился с ошибкой. Проверьте подключение
-    echo      или выполните слияние вручную.
+    echo  [!] git pull завершился с ошибкой.
     echo.
     pause
     goto :MAIN_MENU
@@ -243,11 +208,11 @@ echo.
 echo  [2/4] Обновление backend-зависимостей (pip)...
 if not exist ".venv\Scripts\python.exe" (
     echo  Создание виртуального окружения...
-    "%_PY_EXE%" -m venv .venv
+    "!_PY_EXE!" -m venv .venv
 )
-".venv\Scripts\python.exe" -m pip install -q --upgrade pip
-".venv\Scripts\python.exe" -m pip install -q -r apps\api\requirements.txt
-if %errorlevel% neq 0 (
+call ".venv\Scripts\python.exe" -m pip install -q --upgrade pip
+call ".venv\Scripts\python.exe" -m pip install -q -r apps\api\requirements.txt
+if !errorlevel! neq 0 (
     echo  [!] pip install завершился с ошибкой.
     pause
     goto :MAIN_MENU
@@ -257,12 +222,8 @@ echo.
 echo  [3/4] Обновление frontend-зависимостей (npm)...
 cd /d "%ROOT%\apps\web"
 if exist "node_modules" rmdir /s /q "node_modules"
-if defined _NPM_CLI (
-    "%_NODE_EXE%" "%_NPM_CLI%" install --no-fund --no-audit
-) else (
-    call npm install --no-fund --no-audit
-)
-if %errorlevel% neq 0 (
+call npm install --no-fund --no-audit
+if !errorlevel! neq 0 (
     echo  [!] npm install завершился с ошибкой.
     cd /d "%ROOT%"
     pause
@@ -277,7 +238,6 @@ if exist "%ROOT%\apps\web\.next" rmdir /s /q "%ROOT%\apps\web\.next"
 cd /d "%ROOT%"
 echo.
 echo  Обновление успешно завершено!
-echo  Перезапустите программу если она была запущена.
 echo.
 set "_NODE_EXE=" & set "_PY_EXE="
 pause
@@ -295,23 +255,28 @@ echo.
 cd /d "%ROOT%"
 
 call :CHECK_NODE
-if %errorlevel% neq 0 goto :MAIN_MENU
+if !errorlevel! neq 0 goto :MAIN_MENU
 
 call :CHECK_PYTHON
-if %errorlevel% neq 0 goto :MAIN_MENU
+if !errorlevel! neq 0 goto :MAIN_MENU
 
-:: Создать venv если не существует
+:: ---------- venv ----------
 if not exist ".venv\Scripts\python.exe" (
     echo  Создание виртуального окружения Python...
-    "%_PY_EXE%" -m venv .venv
+    "!_PY_EXE!" -m venv .venv
+    if !errorlevel! neq 0 (
+        echo  [!] Не удалось создать .venv
+        pause
+        goto :MAIN_MENU
+    )
     echo.
 )
 
-:: Установить/проверить зависимости backend
+:: ---------- pip ----------
 echo  Проверка зависимостей backend...
-".venv\Scripts\python.exe" -m pip install -q --upgrade pip
-".venv\Scripts\python.exe" -m pip install -q -r apps\api\requirements.txt
-if %errorlevel% neq 0 (
+call ".venv\Scripts\python.exe" -m pip install -q --upgrade pip
+call ".venv\Scripts\python.exe" -m pip install -q -r apps\api\requirements.txt
+if !errorlevel! neq 0 (
     echo.
     echo  [!] Ошибка при установке Python-зависимостей.
     echo      Попробуйте: удалите папку .venv и запустите снова.
@@ -321,30 +286,29 @@ if %errorlevel% neq 0 (
 )
 echo.
 
-:: Создать .env.local если не существует
+:: ---------- .env.local ----------
 if not exist "apps\web\.env.local" (
-    echo  Создание apps\web\.env.local из .env.example...
-    copy /y ".env.example" "apps\web\.env.local" > nul
-    echo.
+    if exist ".env.example" (
+        echo  Создание apps\web\.env.local из .env.example...
+        copy /y ".env.example" "apps\web\.env.local" > nul
+        echo.
+    )
 )
 
-:: Запустить API (uvicorn) — окно останется открытым
+:: ---------- API backend ----------
 echo  Запуск API backend (uvicorn)...
-start "RAG — API Backend" powershell -NoExit -NoProfile -ExecutionPolicy Bypass -Command "Set-Location -LiteralPath '%ROOT%'; .\.venv\Scripts\Activate.ps1; uvicorn apps.api.main:app --host 127.0.0.1 --port 8000"
+start "RAG — API Backend" cmd /k "cd /d "%ROOT%" && ".venv\Scripts\activate.bat" && python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8000"
 
 :: Дать API время на старт
+echo  Ожидание запуска API (3 сек)...
 timeout /t 3 /nobreak > nul
 
-:: Установить frontend-зависимости если нужно
+:: ---------- npm install ----------
 if not exist "%ROOT%\apps\web\node_modules" (
     echo  Установка frontend-зависимостей (npm install)...
     cd /d "%ROOT%\apps\web"
-    if defined _NPM_CLI (
-        "%_NODE_EXE%" "%_NPM_CLI%" install --no-fund --no-audit
-    ) else (
-        call npm install --no-fund --no-audit
-    )
-    if %errorlevel% neq 0 (
+    call npm install --no-fund --no-audit
+    if !errorlevel! neq 0 (
         echo  [!] npm install завершился с ошибкой.
         cd /d "%ROOT%"
         pause
@@ -354,19 +318,19 @@ if not exist "%ROOT%\apps\web\node_modules" (
     echo.
 )
 
-:: Запустить Web (npm run dev) — окно останется открытым
+:: ---------- Web frontend ----------
 echo  Запуск Web frontend (npm run dev)...
-if defined _NPM_CLI (
-    start "RAG — Web Frontend" powershell -NoExit -NoProfile -ExecutionPolicy Bypass -Command "Set-Location -LiteralPath '%ROOT%\apps\web'; & '%_NODE_EXE%' '%_NPM_CLI%' run dev"
-) else (
-    start "RAG — Web Frontend" powershell -NoExit -NoProfile -ExecutionPolicy Bypass -Command "Set-Location -LiteralPath '%ROOT%\apps\web'; npm run dev"
-)
+start "RAG — Web Frontend" cmd /k "cd /d "%ROOT%\apps\web" && npm run dev"
 
 echo.
-echo  Запущено!
+echo  ════════════════════════════════════════════
+echo    Запущено!
 echo    API:  http://127.0.0.1:8000
 echo    Web:  http://localhost:3000
 echo    Docs: http://127.0.0.1:8000/docs
+echo  ════════════════════════════════════════════
+echo.
+echo  НЕ закрывайте окна «RAG — API Backend» и «RAG — Web Frontend».
 echo.
 set "_NODE_EXE=" & set "_PY_EXE="
 pause
@@ -386,7 +350,8 @@ echo  и индексы. Файлы логов сохранятся.
 echo  Конфигурация .env.local будет сброшена до .env.example.
 echo.
 choice /c YN /n /m "  Продолжить? (Y — да, N — отмена): "
-if %errorlevel%==2 (
+set "_CHOICE=!errorlevel!"
+if "!_CHOICE!"=="2" (
     echo.
     echo  Отменено.
     timeout /t 1 /nobreak > nul
@@ -431,10 +396,11 @@ echo    C.  Открыть папку с логами
 echo    0.  Назад
 echo.
 choice /c ABC0 /n /m "  Ваш выбор: "
-if %errorlevel%==1 goto :OPEN_LOG_APP
-if %errorlevel%==2 goto :OPEN_LOG_UI
-if %errorlevel%==3 goto :OPEN_LOGS_FOLDER
-if %errorlevel%==4 goto :MAIN_MENU
+set "_CHOICE=!errorlevel!"
+if "!_CHOICE!"=="1" goto :OPEN_LOG_APP
+if "!_CHOICE!"=="2" goto :OPEN_LOG_UI
+if "!_CHOICE!"=="3" goto :OPEN_LOGS_FOLDER
+if "!_CHOICE!"=="4" goto :MAIN_MENU
 goto :LOGS_MENU
 
 :OPEN_LOG_APP
@@ -471,9 +437,6 @@ exit /b 0
 :: ================================================================
 ::  ВСПОМОГАТЕЛЬНЫЕ ПОДПРОГРАММЫ
 :: ================================================================
-
-:: OPEN_LOG_WINDOW <title> <prefix>
-:: Открывает новое окно с хвостом последнего лог-файла.
 :OPEN_LOG_WINDOW
 setlocal
 set "WIN_TITLE=%~1"
