@@ -175,7 +175,7 @@ Start-Sleep -Seconds 3
 
 # ── Зависимости frontend (при необходимости) ─────────────────────
 $webDir = Join-Path $ROOT 'apps\web'
-if (-not (Test-Path (Join-Path $webDir 'node_modules'))) {
+if (-not (Test-Path (Join-Path $webDir 'node_modules\.bin\next.cmd'))) {
     Write-Host "  Установка frontend-зависимостей (npm install)..."
     Push-Location $webDir
     npm install --no-fund --no-audit

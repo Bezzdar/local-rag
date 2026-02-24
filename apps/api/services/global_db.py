@@ -34,25 +34,7 @@ class GlobalDB:
     def _migrate(self) -> None:
         """Создание схемы и безопасные ALTER-миграции для старых инсталляций."""
         with self._lock:
-            # Add missing columns for older databases (idempotent)
-            _alter_statements = [
-                "ALTER TABLE parsing_settings ADD COLUMN auto_parse_on_upload INTEGER NOT NULL DEFAULT 0",
-                "ALTER TABLE parsing_settings ADD COLUMN chunking_method TEXT NOT NULL DEFAULT 'general'",
-                "ALTER TABLE parsing_settings ADD COLUMN context_window INTEGER NOT NULL DEFAULT 128",
-                "ALTER TABLE parsing_settings ADD COLUMN use_llm_summary INTEGER NOT NULL DEFAULT 0",
-                "ALTER TABLE parsing_settings ADD COLUMN doc_type TEXT NOT NULL DEFAULT 'technical_manual'",
-                "ALTER TABLE parsing_settings ADD COLUMN parent_chunk_size INTEGER NOT NULL DEFAULT 1024",
-                "ALTER TABLE parsing_settings ADD COLUMN child_chunk_size INTEGER NOT NULL DEFAULT 128",
-                "ALTER TABLE parsing_settings ADD COLUMN symbol_separator TEXT NOT NULL DEFAULT '---chunk---'",
-                "ALTER TABLE sources ADD COLUMN has_base INTEGER NOT NULL DEFAULT 0",
-                "ALTER TABLE sources ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
-            ]
-            for _sql in _alter_statements:
-                try:
-                    self._conn.execute(_sql)
-                    self._conn.commit()
-                except Exception:
-                    pass  # Column already exists
+            # Create tables first (full schema) — idempotent for new installations
             self._conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS notebooks (
@@ -88,10 +70,36 @@ class GlobalDB:
                     min_chunk_size INTEGER NOT NULL DEFAULT 50,
                     ocr_enabled INTEGER NOT NULL DEFAULT 1,
                     ocr_language TEXT NOT NULL DEFAULT 'rus+eng',
-                    auto_parse_on_upload INTEGER NOT NULL DEFAULT 0
+                    auto_parse_on_upload INTEGER NOT NULL DEFAULT 0,
+                    chunking_method TEXT NOT NULL DEFAULT 'general',
+                    context_window INTEGER NOT NULL DEFAULT 128,
+                    use_llm_summary INTEGER NOT NULL DEFAULT 0,
+                    doc_type TEXT NOT NULL DEFAULT 'technical_manual',
+                    parent_chunk_size INTEGER NOT NULL DEFAULT 1024,
+                    child_chunk_size INTEGER NOT NULL DEFAULT 128,
+                    symbol_separator TEXT NOT NULL DEFAULT '---chunk---'
                 );
                 """
             )
+            # ALTER TABLE for older databases that already exist without the new columns
+            _alter_statements = [
+                "ALTER TABLE parsing_settings ADD COLUMN auto_parse_on_upload INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE parsing_settings ADD COLUMN chunking_method TEXT NOT NULL DEFAULT 'general'",
+                "ALTER TABLE parsing_settings ADD COLUMN context_window INTEGER NOT NULL DEFAULT 128",
+                "ALTER TABLE parsing_settings ADD COLUMN use_llm_summary INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE parsing_settings ADD COLUMN doc_type TEXT NOT NULL DEFAULT 'technical_manual'",
+                "ALTER TABLE parsing_settings ADD COLUMN parent_chunk_size INTEGER NOT NULL DEFAULT 1024",
+                "ALTER TABLE parsing_settings ADD COLUMN child_chunk_size INTEGER NOT NULL DEFAULT 128",
+                "ALTER TABLE parsing_settings ADD COLUMN symbol_separator TEXT NOT NULL DEFAULT '---chunk---'",
+                "ALTER TABLE sources ADD COLUMN has_base INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE sources ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+            ]
+            for _sql in _alter_statements:
+                try:
+                    self._conn.execute(_sql)
+                    self._conn.commit()
+                except Exception:
+                    pass  # Column already exists
 
     # --- Notebooks ---
 
