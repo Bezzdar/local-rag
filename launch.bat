@@ -42,6 +42,7 @@ goto :MAIN_MENU
 :: ================================================================
 :CHECK_NODE
 set "_NODE_EXE="
+set "_NPM_CLI="
 
 :: 1) Попытка найти node в PATH
 for /f "tokens=*" %%v in ('node --version 2^>nul') do set "_NODE_EXE=node"
@@ -148,6 +149,22 @@ if "%_NODE_MAJOR%"=="20" if "%_NODE_MINOR%" LSS "9" (
 )
 
 echo  [OK] Node.js %_NODE_VER% (путь: %_NODE_EXE%)
+
+:: Пытаемся определить npm-cli.js, чтобы запускать npm даже без PATH
+for %%p in (
+    "%APPDATA%\npm\node_modules\npm\bin\npm-cli.js"
+    "%ProgramFiles%\nodejs\node_modules\npm\bin\npm-cli.js"
+    "%ProgramFiles(x86)%\nodejs\node_modules\npm\bin\npm-cli.js"
+) do (
+    if not defined _NPM_CLI if exist %%p set "_NPM_CLI=%%~p"
+)
+
+if defined _NPM_CLI (
+    echo  [OK] npm-cli.js найден: %_NPM_CLI%
+) else (
+    echo  [i] npm-cli.js не найден в стандартных путях, будет использован npm из PATH.
+)
+
 set "_NODE_MAJOR=" & set "_NODE_MINOR="
 exit /b 0
 
@@ -240,8 +257,9 @@ echo.
 echo  [3/4] Обновление frontend-зависимостей (npm)...
 cd /d "%ROOT%\apps\web"
 if exist "node_modules" rmdir /s /q "node_modules"
-"%_NODE_EXE%" "%APPDATA%\npm\node_modules\npm\bin\npm-cli.js" install --no-fund --no-audit 2>nul
-if %errorlevel% neq 0 (
+if defined _NPM_CLI (
+    "%_NODE_EXE%" "%_NPM_CLI%" install --no-fund --no-audit
+) else (
     call npm install --no-fund --no-audit
 )
 if %errorlevel% neq 0 (
@@ -321,7 +339,11 @@ timeout /t 3 /nobreak > nul
 if not exist "%ROOT%\apps\web\node_modules" (
     echo  Установка frontend-зависимостей (npm install)...
     cd /d "%ROOT%\apps\web"
-    call npm install --no-fund --no-audit
+    if defined _NPM_CLI (
+        "%_NODE_EXE%" "%_NPM_CLI%" install --no-fund --no-audit
+    ) else (
+        call npm install --no-fund --no-audit
+    )
     if %errorlevel% neq 0 (
         echo  [!] npm install завершился с ошибкой.
         cd /d "%ROOT%"
@@ -334,7 +356,11 @@ if not exist "%ROOT%\apps\web\node_modules" (
 
 :: Запустить Web (npm run dev) — окно останется открытым
 echo  Запуск Web frontend (npm run dev)...
-start "RAG — Web Frontend" powershell -NoExit -NoProfile -ExecutionPolicy Bypass -Command "Set-Location -LiteralPath '%ROOT%\apps\web'; npm run dev"
+if defined _NPM_CLI (
+    start "RAG — Web Frontend" powershell -NoExit -NoProfile -ExecutionPolicy Bypass -Command "Set-Location -LiteralPath '%ROOT%\apps\web'; & '%_NODE_EXE%' '%_NPM_CLI%' run dev"
+) else (
+    start "RAG — Web Frontend" powershell -NoExit -NoProfile -ExecutionPolicy Bypass -Command "Set-Location -LiteralPath '%ROOT%\apps\web'; npm run dev"
+)
 
 echo.
 echo  Запущено!
