@@ -214,7 +214,7 @@ cd /d "%ROOT%\apps\web"
 if exist "node_modules" rmdir /s /q "node_modules"
 "%_NODE_EXE%" "%APPDATA%\npm\node_modules\npm\bin\npm-cli.js" install --no-fund --no-audit 2>nul
 if %errorlevel% neq 0 (
-    npm install --no-fund --no-audit
+    call npm install --no-fund --no-audit
 )
 if %errorlevel% neq 0 (
     echo  [!] npm install завершился с ошибкой.
@@ -293,7 +293,7 @@ timeout /t 3 /nobreak > nul
 if not exist "%ROOT%\apps\web\node_modules" (
     echo  Установка frontend-зависимостей (npm install)...
     cd /d "%ROOT%\apps\web"
-    npm install --no-fund --no-audit
+    call npm install --no-fund --no-audit
     if %errorlevel% neq 0 (
         echo  [!] npm install завершился с ошибкой.
         cd /d "%ROOT%"
