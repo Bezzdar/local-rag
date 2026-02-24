@@ -297,30 +297,35 @@ if not exist "apps\web\.env.local" (
 
 :: ---------- API backend ----------
 echo  Запуск API backend (uvicorn)...
-start "RAG — API Backend" "%ComSpec%" /k "cd /d ""%ROOT%"" && ""%ROOT%\.venv\Scripts\python.exe"" -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8000"
+cd /d "%ROOT%"
+start "RAG — API Backend" cmd /k ".venv\Scripts\python.exe -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8000"
 
 :: Дать API время на старт
 echo  Ожидание запуска API (3 сек)...
 timeout /t 3 /nobreak > nul
 
 :: ---------- npm install ----------
-if not exist "%ROOT%\apps\web\node_modules\.bin\next.cmd" (
-    echo  Установка frontend-зависимостей (npm install)...
-    cd /d "%ROOT%\apps\web"
-    call npm install --no-fund --no-audit
-    if !errorlevel! neq 0 (
-        echo  [!] npm install завершился с ошибкой.
-        cd /d "%ROOT%"
-        pause
-        goto :MAIN_MENU
-    )
-    cd /d "%ROOT%"
-    echo.
-)
+:: Используем goto вместо скобок, чтобы защититься от вылетов парсера
+if exist "%ROOT%\apps\web\node_modules\.bin\next.cmd" goto :SKIP_NPM
 
+echo  Установка frontend-зависимостей (npm install)...
+cd /d "%ROOT%\apps\web"
+call npm install --no-fund --no-audit
+if !errorlevel! neq 0 (
+    echo  [!] npm install завершился с ошибкой.
+    cd /d "%ROOT%"
+    pause
+    goto :MAIN_MENU
+)
+cd /d "%ROOT%"
+echo.
+
+:SKIP_NPM
 :: ---------- Web frontend ----------
 echo  Запуск Web frontend (npm run dev)...
-start "RAG — Web Frontend" "%ComSpec%" /k "cd /d ""%ROOT%\apps\web"" && call npm run dev"
+cd /d "%ROOT%\apps\web"
+start "RAG — Web Frontend" cmd /k "npm run dev"
+cd /d "%ROOT%"
 
 echo.
 echo  ════════════════════════════════════════════
@@ -335,7 +340,6 @@ echo.
 set "_NODE_EXE=" & set "_PY_EXE="
 pause
 goto :MAIN_MENU
-
 
 :: ================================================================
 ::  3) ОТКАТ НАСТРОЕК ДО БАЗОВЫХ
