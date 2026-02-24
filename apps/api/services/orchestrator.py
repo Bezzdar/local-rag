@@ -23,8 +23,6 @@ NOTEBOOKS_DB_DIR.mkdir(parents=True, exist_ok=True)
 CITATIONS_DIR.mkdir(parents=True, exist_ok=True)
 NOTES_DIR.mkdir(parents=True, exist_ok=True)
 
-DEMO_NOTEBOOK_ID = "00000000-0000-0000-0000-000000000001"
-
 logger = logging.getLogger(__name__)
 
 _global_db = GlobalDB()
@@ -109,44 +107,8 @@ class InMemoryStore(InMemoryState):
             self._seed_demo()
 
     def _seed_demo(self) -> None:
-        """Создаёт демо-ноутбук при первом запуске и персистирует его."""
-        ts = now_iso()
-        notebook = Notebook(
-            id=DEMO_NOTEBOOK_ID,
-            title="Техдоки: demo",
-            created_at=ts,
-            updated_at=ts,
-        )
-        self.notebooks[notebook.id] = notebook
-        self.messages.setdefault(notebook.id, [])
-        self.chat_versions.setdefault(notebook.id, 0)
-        settings = ParsingSettings()
-        self.parsing_settings[notebook.id] = settings
-        _global_db.upsert_notebook(notebook.id, notebook.title, notebook.created_at, notebook.updated_at)
-        _global_db.upsert_parsing_settings(
-            notebook.id,
-            settings.chunk_size,
-            settings.chunk_overlap,
-            settings.min_chunk_size,
-            settings.ocr_enabled,
-            settings.ocr_language,
-            settings.auto_parse_on_upload,
-            settings.chunking_method,
-            settings.context_window,
-            settings.use_llm_summary,
-            settings.doc_type,
-            settings.parent_chunk_size,
-            settings.child_chunk_size,
-            settings.symbol_separator,
-        )
-
-        demo_dir = DOCS_DIR / notebook.id
-        demo_dir.mkdir(parents=True, exist_ok=True)
-        samples = [demo_dir / "sample-1.txt", demo_dir / "sample-2.txt"]
-        for idx, sample in enumerate(samples, start=1):
-            if not sample.exists():
-                sample.write_text(f"Demo file #{idx}\nSection {idx}", encoding="utf-8")
-            self.add_source_from_path(notebook.id, str(sample), indexed=True)
+        """Создаёт первый пустой ноутбук при первом запуске."""
+        self.create_notebook("Ноутбук 1")
 
     def _next_available_path(self, notebook_id: str, filename: str) -> Path:
         notebook_dir = DOCS_DIR / notebook_id

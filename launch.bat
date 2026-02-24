@@ -47,6 +47,27 @@ echo  ── Обновление с GitHub ────────────
 echo.
 cd /d "%ROOT%"
 
+:: Проверка наличия и версии Node.js
+for /f "tokens=*" %%v in ('node --version 2^>nul') do set "_NODE_VER=%%v"
+if not defined _NODE_VER (
+    echo  [!] Node.js не найден!
+    echo      Установите Node.js 20 LTS: https://nodejs.org/
+    echo.
+    pause
+    goto :MAIN_MENU
+)
+for /f "tokens=1 delims=." %%a in ("%_NODE_VER:~1%") do set "_NODE_MAJOR=%%a"
+if %_NODE_MAJOR% LSS 18 (
+    echo  [!] Версия Node.js слишком старая: %_NODE_VER%
+    echo      Требуется Node.js 18+ (рекомендуется 20 LTS)
+    echo      Скачайте с https://nodejs.org/
+    echo.
+    set "_NODE_VER=" & set "_NODE_MAJOR="
+    pause
+    goto :MAIN_MENU
+)
+set "_NODE_VER=" & set "_NODE_MAJOR="
+
 echo  [1/4] git pull --rebase...
 git pull --rebase
 if %errorlevel% neq 0 (
@@ -106,6 +127,27 @@ echo  ── Запуск программы ───────────�
 echo.
 cd /d "%ROOT%"
 
+:: Проверка наличия и версии Node.js
+for /f "tokens=*" %%v in ('node --version 2^>nul') do set "_NODE_VER=%%v"
+if not defined _NODE_VER (
+    echo  [!] Node.js не найден!
+    echo      Установите Node.js 20 LTS: https://nodejs.org/
+    echo.
+    pause
+    goto :MAIN_MENU
+)
+for /f "tokens=1 delims=." %%a in ("%_NODE_VER:~1%") do set "_NODE_MAJOR=%%a"
+if %_NODE_MAJOR% LSS 18 (
+    echo  [!] Версия Node.js слишком старая: %_NODE_VER%
+    echo      Требуется Node.js 18+ (рекомендуется 20 LTS)
+    echo      Скачайте с https://nodejs.org/
+    echo.
+    set "_NODE_VER=" & set "_NODE_MAJOR="
+    pause
+    goto :MAIN_MENU
+)
+set "_NODE_VER=" & set "_NODE_MAJOR="
+
 :: Создать venv если не существует
 if not exist ".venv\Scripts\python.exe" (
     echo  Создание виртуального окружения Python...
@@ -127,14 +169,29 @@ if not exist "apps\web\.env.local" (
 
 :: Запустить API (uvicorn) — окно останется открытым
 echo  Запуск API backend (uvicorn)...
-start "RAG — API Backend" powershell -NoExit -NoProfile -Command "Set-Location -LiteralPath '%ROOT%'; .\.venv\Scripts\Activate.ps1; uvicorn apps.api.main:app --host 127.0.0.1 --port 8000"
+start "RAG — API Backend" powershell -NoExit -NoProfile -ExecutionPolicy Bypass -Command "Set-Location -LiteralPath '%ROOT%'; .\.venv\Scripts\Activate.ps1; uvicorn apps.api.main:app --host 127.0.0.1 --port 8000"
 
 :: Дать API время на старт
 timeout /t 3 /nobreak > nul
 
+:: Установить frontend-зависимости если нужно
+if not exist "%ROOT%\apps\web\node_modules" (
+    echo  Установка frontend-зависимостей (npm install)...
+    cd /d "%ROOT%\apps\web"
+    npm install 2>&1
+    if %errorlevel% neq 0 (
+        echo  [!] npm install завершился с ошибкой.
+        cd /d "%ROOT%"
+        pause
+        goto :MAIN_MENU
+    )
+    cd /d "%ROOT%"
+    echo.
+)
+
 :: Запустить Web (npm run dev) — окно останется открытым
 echo  Запуск Web frontend (npm run dev)...
-start "RAG — Web Frontend" powershell -NoExit -NoProfile -Command "Set-Location -LiteralPath '%ROOT%\apps\web'; npm run dev"
+start "RAG — Web Frontend" powershell -NoExit -NoProfile -ExecutionPolicy Bypass -Command "Set-Location -LiteralPath '%ROOT%\apps\web'; npm run dev"
 
 echo.
 echo  Запущено!
@@ -261,7 +318,7 @@ if not exist "%LOG_DIR%" (
     exit /b 0
 )
 
-start "%WIN_TITLE%" powershell -NoExit -NoProfile -Command "$f = Get-ChildItem '%LOG_DIR%\%LOG_PREFIX%_*.log' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if (-not $f) { Write-Host 'Файл лога не найден.' } else { Get-Content $f.FullName -Wait -Tail 50 }"
+start "%WIN_TITLE%" powershell -NoExit -NoProfile -ExecutionPolicy Bypass -Command "$f = Get-ChildItem '%LOG_DIR%\%LOG_PREFIX%_*.log' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if (-not $f) { Write-Host 'Файл лога не найден.' } else { Get-Content $f.FullName -Wait -Tail 50 }"
 
 endlocal
 exit /b 0

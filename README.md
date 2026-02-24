@@ -56,7 +56,7 @@
 | Компонент | Версия | Примечание |
 |-----------|--------|------------|
 | **Python** | 3.10+ (рекомендуется 3.11) | с опцией «Add python.exe to PATH» |
-| **Node.js** | 20 LTS | 64-битная версия |
+| **Node.js** | 18+ (рекомендуется 20 LTS) | 64-битная версия; 17 и ниже — **не работает** |
 | **npm** | входит в Node.js | |
 | **Git** | любая актуальная | |
 | **Microsoft Visual C++ Redistributable** | 2015–2022 | требуется на Windows для части Python-пакетов |
@@ -247,7 +247,8 @@ Frontend использует **Next.js 14**, **React 18**, **TanStack Query**, 
 | Проблема | Решение |
 |----------|---------|
 | `python` не найден | Переустановите Python с опцией «Add to PATH» |
-| Ошибка активации `.venv` в PowerShell | `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` |
+| Ошибка активации `.venv` в PowerShell: `выполнение сценариев отключено` | `launch.bat` версии 2+ исправляет это автоматически (`-ExecutionPolicy Bypass`). Вручную: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` |
+| `SyntaxError: Unexpected token '?'` при запуске frontend | Слишком старая версия Node.js (< 18). Установите Node.js 20 LTS: https://nodejs.org/ |
 | `pip install` блокируется proxy | `PIP_INDEX_URL=https://<pypi>/simple pip install ...` |
 | `npm install` даёт 403/timeout | `npm config set registry https://<corp-registry>/` |
 | `next-swc.win32-x64-msvc.node is not a valid Win32 application` | Убедитесь, что Node.js 64-битный (`node -p "process.arch"` → `x64`). Удалите и переустановите: `Remove-Item -Recurse -Force node_modules, package-lock.json && npm install` |
