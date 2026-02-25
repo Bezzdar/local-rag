@@ -10,7 +10,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 
 from ..schemas import ChatRequest, ChatResponse, Citation, CitationLocation
-from ..services.agent_registry import resolve_agent
+from .agents import resolve_agent
 from ..services.chat_modes import (
     CHAT_MODES_BY_CODE,
     RAG_NO_SOURCES_MESSAGE,
