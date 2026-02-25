@@ -293,7 +293,7 @@ export default function NotebookWorkspacePage() {
       notebookId,
       message: text,
       mode: streamMode,
-      agentId: currentMode === 'agent' ? selectedAgentId : undefined,
+      agentId: currentMode === 'agent' ? effectiveAgentId : undefined,
       selectedSourceIds,
       handlers: {
         onToken: (token) => {
@@ -525,8 +525,10 @@ export default function NotebookWorkspacePage() {
         <ChatPanel
           notebookId={notebookId}
           mode={currentMode}
-          agentId={selectedAgentId}
+          agentId={effectiveAgentId}
           agents={agents.data ?? []}
+          agentsLoading={agents.isLoading}
+          agentsError={agents.isError ? 'Не удалось загрузить манифест агентов.' : ''}
           messages={messages.data}
           streaming={streaming}
           citations={citations}

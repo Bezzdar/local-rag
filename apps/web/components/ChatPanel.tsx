@@ -10,6 +10,8 @@ type Props = {
   mode: ChatMode;
   agentId: string;
   agents: AgentManifest[];
+  agentsLoading?: boolean;
+  agentsError?: string;
   messages: ChatMessage[];
   streaming: string;
   citations: Citation[];
