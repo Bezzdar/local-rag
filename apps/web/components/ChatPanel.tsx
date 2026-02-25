@@ -160,20 +160,25 @@ export default function ChatPanel(props: Props) {
             Очистить чат
           </button>
           {props.mode === 'agent' && props.agents.length > 0 && (
-            <select
-              className="rounded border border-slate-300 p-2 text-sm"
-              value={props.agentId}
-              onChange={(event) => {
-                logClientEvent({ event: 'ui.agent.change', notebookId: props.notebookId, metadata: { agentId: event.target.value } });
-                props.onAgentChange(event.target.value);
-              }}
-            >
-              {props.agents.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.name}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-1 rounded border border-slate-300 bg-white p-1" title="Выбор агента из манифеста"> 
+              {props.agents.map((agent) => {
+                const isActive = agent.id === props.agentId;
+                return (
+                  <button
+                    key={agent.id}
+                    type="button"
+                    className={`rounded px-2 py-1 text-xs transition-colors ${isActive ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+                    title={`${agent.description}${agent.tools.length ? ` • tools: ${agent.tools.join(', ')}` : ''}`}
+                    onClick={() => {
+                      logClientEvent({ event: 'ui.agent.change', notebookId: props.notebookId, metadata: { agentId: agent.id } });
+                      props.onAgentChange(agent.id);
+                    }}
+                  >
+                    {agent.name}
+                  </button>
+                );
+              })}
+            </div>
           )}
           <select
             className="rounded border border-slate-300 p-2 text-sm"

@@ -15,7 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { beginClear, failClear, finishClear, registerStreamCloser, shouldIgnoreStream, unregisterStreamCloser, useChatStore } from '@/src/stores/chatStore';
 import { setKeepAlive } from '@/src/stores/connectionStore';
 import { setCurrentMode, useModeStore } from '@/src/stores/modeStore';
-import { setSelectedAgent, useAgentStore } from '@/src/stores/agentStore';
+import { setSelectedAgent, syncSelectedAgentWithManifest, useAgentStore } from '@/src/stores/agentStore';
 
 const LEFT_MIN = 240;
 const LEFT_MAX = 520;
@@ -102,6 +102,14 @@ export default function NotebookWorkspacePage() {
     queryFn: () => api.listGlobalNotes(),
     enabled: allowNotebookQueries,
   });
+
+
+  useEffect(() => {
+    if (!agents.data) {
+      return;
+    }
+    syncSelectedAgentWithManifest(agents.data);
+  }, [agents.data]);
 
   const activeNotebook = useMemo(
     () => notebooks.data?.find((nb) => nb.id === notebookId),

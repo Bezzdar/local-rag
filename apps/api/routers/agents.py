@@ -3,20 +3,63 @@
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter
 
 router = APIRouter(prefix="/api", tags=["agents"])
 logger = logging.getLogger(__name__)
 
-# Папка agents находится в корне репозитория (два уровня выше apps/api)
+# Папка agent находится в корне репозитория (два уровня выше apps/api)
 _AGENTS_DIR = Path(__file__).resolve().parents[4] / "agent"
+_REGISTRY_PATH = _AGENTS_DIR / "registry.json"
 
 
-@router.get("/agents")
-def list_agents() -> list[dict]:
-    """Возвращает список агентов, обнаруженных в директории agent/."""
-    agents: list[dict] = []
+def _normalize_agent_manifest(raw: dict[str, Any]) -> dict[str, Any]:
+    """Нормализует манифест агента к стабильной структуре для UI."""
+    tools = raw.get("tools")
+    requires = raw.get("requires")
+    notebook_modes = raw.get("notebook_modes")
+
+    return {
+        "id": str(raw.get("id", "")).strip(),
+        "name": str(raw.get("name", "")).strip(),
+        "description": str(raw.get("description", "")).strip(),
+        "version": str(raw.get("version", "0.0.0")).strip() or "0.0.0",
+        "requires": [str(item).strip() for item in requires if str(item).strip()] if isinstance(requires, list) else [],
+        "tools": [str(item).strip() for item in tools if str(item).strip()] if isinstance(tools, list) else [],
+        "notebook_modes": [str(item).strip() for item in notebook_modes if str(item).strip()] if isinstance(notebook_modes, list) else ["agent"],
+    }
+
+
+def _load_from_registry() -> list[dict[str, Any]]:
+    if not _REGISTRY_PATH.is_file():
+        return []
+
+    try:
+        payload = json.loads(_REGISTRY_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        logger.warning("Failed to parse agent registry: %s", _REGISTRY_PATH)
+        return []
+
+    raw_agents = payload.get("agents") if isinstance(payload, dict) else None
+    if not isinstance(raw_agents, list):
+        logger.warning("Invalid registry format (missing agents list): %s", _REGISTRY_PATH)
+        return []
+
+    normalized = []
+    for raw in raw_agents:
+        if not isinstance(raw, dict):
+            continue
+        item = _normalize_agent_manifest(raw)
+        if item["id"] and item["name"]:
+            normalized.append(item)
+
+    return normalized
+
+
+def _discover_from_agent_folders() -> list[dict[str, Any]]:
+    agents: list[dict[str, Any]] = []
 
     if not _AGENTS_DIR.is_dir():
         logger.warning("Agents directory not found: %s", _AGENTS_DIR)
@@ -30,8 +73,19 @@ def list_agents() -> list[dict]:
             continue
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            agents.append(manifest)
+            normalized = _normalize_agent_manifest(manifest)
+            if normalized["id"] and normalized["name"]:
+                agents.append(normalized)
         except Exception:
             logger.warning("Failed to read manifest for agent dir: %s", agent_dir.name)
 
     return agents
+
+
+@router.get("/agents")
+def list_agents() -> list[dict[str, Any]]:
+    """Возвращает список агентов из registry.json или директории agent/."""
+    agents = _load_from_registry()
+    if agents:
+        return agents
+    return _discover_from_agent_folders()

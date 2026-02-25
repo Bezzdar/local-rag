@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "agents": [
+    {
+      "id": "agent_001",
+      "name": "Dash",
+      "description": "Self-learning data agent for text-to-SQL insights. Grounds SQL generation in 6 layers of context and improves automatically with every query.",
+      "version": "1.0.0",
+      "requires": ["postgresql", "openai"],
+      "tools": ["text-to-sql", "schema-introspection", "learning-loop"],
+      "notebook_modes": ["agent"]
+    },
+    {
+      "id": "agent_002",
+      "name": "Агент 2",
+      "description": "Заглушка второго агента.",
+      "version": "0.1.0",
+      "requires": [],
+      "tools": ["stub"],
+      "notebook_modes": ["agent"]
+    }
+  ]
+}
