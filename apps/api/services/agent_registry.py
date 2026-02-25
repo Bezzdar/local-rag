@@ -1,20 +1,20 @@
-"""Роут для получения списка доступных агентов."""
+"""Сервис загрузки и резолва агентных манифестов."""
+
+from __future__ import annotations
 
 import json
 import logging
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter
-
-from ..services.agent_registry import list_agents
+logger = logging.getLogger(__name__)
 
 # Папка agent находится в корне репозитория (два уровня выше apps/api)
-_AGENTS_DIR = Path(__file__).resolve().parents[4] / "agent"
-_REGISTRY_PATH = _AGENTS_DIR / "registry.json"
+AGENTS_DIR = Path(__file__).resolve().parents[3] / "agent"
+REGISTRY_PATH = AGENTS_DIR / "registry.json"
 
 
-def _normalize_agent_manifest(raw: dict[str, Any]) -> dict[str, Any]:
+def normalize_agent_manifest(raw: dict[str, Any]) -> dict[str, Any]:
     """Нормализует манифест агента к стабильной структуре для UI."""
     tools = raw.get("tools")
     requires = raw.get("requires")
@@ -31,40 +31,42 @@ def _normalize_agent_manifest(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _load_from_registry() -> list[dict[str, Any]]:
-    if not _REGISTRY_PATH.is_file():
+def load_agents_from_registry() -> list[dict[str, Any]]:
+    """Загружает список агентов из registry.json."""
+    if not REGISTRY_PATH.is_file():
         return []
 
     try:
-        payload = json.loads(_REGISTRY_PATH.read_text(encoding="utf-8"))
+        payload = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
     except Exception:
-        logger.warning("Failed to parse agent registry: %s", _REGISTRY_PATH)
+        logger.warning("Failed to parse agent registry: %s", REGISTRY_PATH)
         return []
 
     raw_agents = payload.get("agents") if isinstance(payload, dict) else None
     if not isinstance(raw_agents, list):
-        logger.warning("Invalid registry format (missing agents list): %s", _REGISTRY_PATH)
+        logger.warning("Invalid registry format (missing agents list): %s", REGISTRY_PATH)
         return []
 
     normalized = []
     for raw in raw_agents:
         if not isinstance(raw, dict):
             continue
-        item = _normalize_agent_manifest(raw)
+        item = normalize_agent_manifest(raw)
         if item["id"] and item["name"]:
             normalized.append(item)
 
     return normalized
 
 
-def _discover_from_agent_folders() -> list[dict[str, Any]]:
+def discover_agents_from_folders() -> list[dict[str, Any]]:
+    """Загружает список агентов из agent/*/manifest.json."""
     agents: list[dict[str, Any]] = []
 
-    if not _AGENTS_DIR.is_dir():
-        logger.warning("Agents directory not found: %s", _AGENTS_DIR)
+    if not AGENTS_DIR.is_dir():
+        logger.warning("Agents directory not found: %s", AGENTS_DIR)
         return agents
 
-    for agent_dir in sorted(_AGENTS_DIR.iterdir()):
+    for agent_dir in sorted(AGENTS_DIR.iterdir()):
         if not agent_dir.is_dir():
             continue
         manifest_path = agent_dir / "manifest.json"
@@ -72,7 +74,7 @@ def _discover_from_agent_folders() -> list[dict[str, Any]]:
             continue
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            normalized = _normalize_agent_manifest(manifest)
+            normalized = normalize_agent_manifest(manifest)
             if normalized["id"] and normalized["name"]:
                 agents.append(normalized)
         except Exception:
@@ -81,10 +83,24 @@ def _discover_from_agent_folders() -> list[dict[str, Any]]:
     return agents
 
 
-@router.get("/agents")
 def list_agents() -> list[dict[str, Any]]:
     """Возвращает список агентов из registry.json или директории agent/."""
-    agents = _load_from_registry()
+    agents = load_agents_from_registry()
     if agents:
         return agents
-    return _discover_from_agent_folders()
+    return discover_agents_from_folders()
+
+
+def resolve_agent(agent_id: str) -> dict[str, Any] | None:
+    """Возвращает агента по id или первого доступного как fallback."""
+    agents = list_agents()
+    if not agents:
+        return None
+
+    normalized_id = (agent_id or "").strip()
+    if normalized_id:
+        for agent in agents:
+            if agent.get("id") == normalized_id:
+                return agent
+
+    return agents[0]
