@@ -10,6 +10,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 
 from ..schemas import ChatRequest, ChatResponse, Citation, CitationLocation
+from .agents import resolve_agent
 from ..services.chat_modes import (
     CHAT_MODES_BY_CODE,
     RAG_NO_SOURCES_MESSAGE,
@@ -84,7 +85,15 @@ async def chat(payload: ChatRequest) -> ChatResponse:
     source_order_map = store.get_source_order_map(payload.notebook_id)
 
     if mode == "agent":
-        response_text = build_answer(mode, payload.message, [], agent_id="")
+        selected_agent = resolve_agent(payload.agent_id)
+        response_text = build_answer(
+            mode,
+            payload.message,
+            [],
+            agent_id=selected_agent.get("id", "") if selected_agent else payload.agent_id,
+            agent_name=selected_agent.get("name", "") if selected_agent else "",
+            tools=selected_agent.get("tools", []) if selected_agent else [],
+        )
         citations: list[Citation] = []
 
     else:  # "rag" или "model"
@@ -149,7 +158,15 @@ async def chat_stream(
 
         # --- Agent: заглушка без retrieval ---
         if normalized_mode == "agent":
-            answer = build_answer(normalized_mode, message, [], agent_id=agent_id)
+            selected_agent = resolve_agent(agent_id)
+            answer = build_answer(
+                normalized_mode,
+                message,
+                [],
+                agent_id=selected_agent.get("id", "") if selected_agent else agent_id,
+                agent_name=selected_agent.get("name", "") if selected_agent else "",
+                tools=selected_agent.get("tools", []) if selected_agent else [],
+            )
             citations: list[Citation] = []
             for word in answer.split(" "):
                 token = f"{word} "

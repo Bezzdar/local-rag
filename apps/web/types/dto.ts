@@ -102,7 +102,9 @@ export const AgentManifestSchema = z.object({
   name: z.string(),
   description: z.string(),
   version: z.string(),
-  requires: z.array(z.string()).optional(),
+  requires: z.array(z.string()).default([]),
+  tools: z.array(z.string()).default([]),
+  notebook_modes: z.array(z.string()).default(['agent']),
 });
 
 export type AgentManifest = z.infer<typeof AgentManifestSchema>;
