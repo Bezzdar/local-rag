@@ -15,7 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { beginClear, failClear, finishClear, registerStreamCloser, shouldIgnoreStream, unregisterStreamCloser, useChatStore } from '@/src/stores/chatStore';
 import { setKeepAlive } from '@/src/stores/connectionStore';
 import { setCurrentMode, useModeStore } from '@/src/stores/modeStore';
-import { setSelectedAgent, useAgentStore } from '@/src/stores/agentStore';
+import { setSelectedAgent, syncSelectedAgentWithManifest, useAgentStore } from '@/src/stores/agentStore';
 
 const LEFT_MIN = 240;
 const LEFT_MAX = 520;
@@ -102,6 +102,19 @@ export default function NotebookWorkspacePage() {
     queryFn: () => api.listGlobalNotes(),
     enabled: allowNotebookQueries,
   });
+
+
+  useEffect(() => {
+    if (!agents.data) {
+      return;
+    }
+    syncSelectedAgentWithManifest(agents.data);
+  }, [agents.data]);
+
+  const effectiveAgentId = useMemo(
+    () => selectedAgentId || agents.data?.[0]?.id || '',
+    [agents.data, selectedAgentId],
+  );
 
   const activeNotebook = useMemo(
     () => notebooks.data?.find((nb) => nb.id === notebookId),
@@ -285,7 +298,7 @@ export default function NotebookWorkspacePage() {
       notebookId,
       message: text,
       mode: streamMode,
-      agentId: currentMode === 'agent' ? selectedAgentId : undefined,
+      agentId: currentMode === 'agent' ? effectiveAgentId : undefined,
       selectedSourceIds,
       handlers: {
         onToken: (token) => {
@@ -517,8 +530,10 @@ export default function NotebookWorkspacePage() {
         <ChatPanel
           notebookId={notebookId}
           mode={currentMode}
-          agentId={selectedAgentId}
+          agentId={effectiveAgentId}
           agents={agents.data ?? []}
+          agentsLoading={agents.isLoading}
+          agentsError={agents.isError ? 'Не удалось загрузить манифест агентов.' : ''}
           messages={messages.data}
           streaming={streaming}
           citations={citations}

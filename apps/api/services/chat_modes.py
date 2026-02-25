@@ -45,11 +45,25 @@ def normalize_chat_mode(raw_mode: str) -> str:
     return mode if mode in CHAT_MODES_BY_CODE else DEFAULT_CHAT_MODE
 
 
-def build_answer(mode: str, message: str, citations: list[Citation], agent_id: str = "") -> str:
-    """Формирует шаблонный ответ. Используется только для режима Agent."""
+def build_answer(
+    mode: str,
+    message: str,
+    citations: list[Citation],
+    agent_id: str = "",
+    agent_name: str = "",
+    tools: list[str] | None = None,
+) -> str:
+    """Формирует ответ для режима Agent и fallback для остальных режимов."""
     if mode == "agent":
-        label = f"Агент [{agent_id}]" if agent_id else "Агент"
-        return f"{label}: режим находится в разработке."
+        resolved_name = (agent_name or "").strip()
+        resolved_id = (agent_id or "").strip()
+        label = f"{resolved_name} [{resolved_id}]" if resolved_name and resolved_id else (resolved_name or resolved_id or "Агент")
+        tools_text = ", ".join(tools or []) if tools else "не указаны"
+        return (
+            f"Агент «{label}» активирован. "
+            f"Доступные тулзы: {tools_text}. "
+            f"Запрос принят: {message}"
+        )
 
     # Fallback для непредвиденных случаев
     spec = CHAT_MODES_BY_CODE.get(mode)
