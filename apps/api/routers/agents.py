@@ -7,7 +7,12 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from ..services.agent_registry import list_agents
+# ⚠️ чтобы не конфликтовать с эндпоинтом, лучше переименовать импорт
+from ..services.agent_registry import list_agents as registry_list_agents
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["agents"])
 
 # Папка agent находится в корне репозитория (два уровня выше apps/api)
 _AGENTS_DIR = Path(__file__).resolve().parents[4] / "agent"
@@ -27,7 +32,11 @@ def _normalize_agent_manifest(raw: dict[str, Any]) -> dict[str, Any]:
         "version": str(raw.get("version", "0.0.0")).strip() or "0.0.0",
         "requires": [str(item).strip() for item in requires if str(item).strip()] if isinstance(requires, list) else [],
         "tools": [str(item).strip() for item in tools if str(item).strip()] if isinstance(tools, list) else [],
-        "notebook_modes": [str(item).strip() for item in notebook_modes if str(item).strip()] if isinstance(notebook_modes, list) else ["agent"],
+        "notebook_modes": (
+            [str(item).strip() for item in notebook_modes if str(item).strip()]
+            if isinstance(notebook_modes, list)
+            else ["agent"]
+        ),
     }
 
 
@@ -46,7 +55,7 @@ def _load_from_registry() -> list[dict[str, Any]]:
         logger.warning("Invalid registry format (missing agents list): %s", _REGISTRY_PATH)
         return []
 
-    normalized = []
+    normalized: list[dict[str, Any]] = []
     for raw in raw_agents:
         if not isinstance(raw, dict):
             continue
@@ -82,7 +91,7 @@ def _discover_from_agent_folders() -> list[dict[str, Any]]:
 
 
 @router.get("/agents")
-def list_agents() -> list[dict[str, Any]]:
+def get_agents() -> list[dict[str, Any]]:
     """Возвращает список агентов из registry.json или директории agent/."""
     agents = _load_from_registry()
     if agents:
