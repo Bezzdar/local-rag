@@ -89,18 +89,3 @@ def list_agents() -> list[dict[str, Any]]:
     if agents:
         return agents
     return _discover_from_agent_folders()
-
-
-def resolve_agent(agent_id: str) -> dict[str, Any] | None:
-    """Возвращает агента по id или первого доступного как fallback."""
-    agents = list_agents()
-    if not agents:
-        return None
-
-    normalized_id = (agent_id or "").strip()
-    if normalized_id:
-        for agent in agents:
-            if agent.get("id") == normalized_id:
-                return agent
-
-    return agents[0]

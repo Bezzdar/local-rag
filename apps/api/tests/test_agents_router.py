@@ -47,21 +47,3 @@ def test_list_agents_falls_back_to_folders(tmp_path: Path, monkeypatch):
     assert [agent["id"] for agent in result] == ["agent_legacy"]
     assert result[0]["notebook_modes"] == ["agent"]
     assert result[0]["requires"] == ["db"]
-
-
-def test_resolve_agent_returns_first_when_id_missing(tmp_path: Path, monkeypatch):
-    agents_dir = tmp_path / "agent"
-    agents_dir.mkdir()
-
-    registry = agents_dir / "registry.json"
-    registry.write_text(
-        '{"version":1,"agents":[{"id":"agent_alpha","name":"Alpha","description":"A","version":"1.0.0"}]}'
-    )
-
-    monkeypatch.setattr(agents, "_AGENTS_DIR", agents_dir)
-    monkeypatch.setattr(agents, "_REGISTRY_PATH", registry)
-
-    resolved = agents.resolve_agent("")
-
-    assert resolved is not None
-    assert resolved["id"] == "agent_alpha"

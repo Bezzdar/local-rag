@@ -161,34 +161,25 @@ export default function ChatPanel(props: Props) {
           >
             Очистить чат
           </button>
-          {props.mode === 'agent' && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500">Агенты:</span>
-              {props.agents.length > 0 ? (
-                <div className="flex items-center gap-1 rounded border border-slate-300 bg-white p-1" title="Выбор агента из манифеста">
-                  {props.agents.map((agent) => {
-                    const isActive = agent.id === props.agentId;
-                    return (
-                      <button
-                        key={agent.id}
-                        type="button"
-                        className={`rounded px-2 py-1 text-xs transition-colors ${isActive ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
-                        title={`${agent.description}${agent.tools.length ? ` • tools: ${agent.tools.join(', ')}` : ''}`}
-                        onClick={() => {
-                          logClientEvent({ event: 'ui.agent.change', notebookId: props.notebookId, metadata: { agentId: agent.id } });
-                          props.onAgentChange(agent.id);
-                        }}
-                      >
-                        {agent.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <span className="text-xs text-amber-700">
-                  {props.agentsLoading ? 'Загрузка манифеста…' : props.agentsError || 'Агенты не найдены в манифесте.'}
-                </span>
-              )}
+          {props.mode === 'agent' && props.agents.length > 0 && (
+            <div className="flex items-center gap-1 rounded border border-slate-300 bg-white p-1" title="Выбор агента из манифеста"> 
+              {props.agents.map((agent) => {
+                const isActive = agent.id === props.agentId;
+                return (
+                  <button
+                    key={agent.id}
+                    type="button"
+                    className={`rounded px-2 py-1 text-xs transition-colors ${isActive ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+                    title={`${agent.description}${agent.tools.length ? ` • tools: ${agent.tools.join(', ')}` : ''}`}
+                    onClick={() => {
+                      logClientEvent({ event: 'ui.agent.change', notebookId: props.notebookId, metadata: { agentId: agent.id } });
+                      props.onAgentChange(agent.id);
+                    }}
+                  >
+                    {agent.name}
+                  </button>
+                );
+              })}
             </div>
           )}
           <select
