@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["agents"])
 
-_AGENTS_DIR = Path(__file__).resolve().parents[4] / "agent"
+# Папка agent находится в корне репозитория (три уровня выше apps/api/routers)
+_AGENTS_DIR = Path(__file__).resolve().parents[3] / "agent"
 _REGISTRY_PATH = _AGENTS_DIR / "registry.json"
 
 
@@ -93,13 +94,12 @@ def _discover_from_agent_folders() -> list[dict[str, Any]]:
 @router.get("/agents")
 @router.get("/api/agents")
 def get_agents() -> list[dict[str, Any]]:
-    agents = _load_from_registry()
-    if agents:
-        return agents
-    return _discover_from_agent_folders()
+    """Возвращает список агентов с устойчивым fallback-порядком."""
+    return list_agents()
 
 
 def list_agents() -> list[dict[str, Any]]:
+    """Совместимый API для импортов из тестов/других модулей."""
     local_agents = _load_from_registry()
     if local_agents:
         return local_agents
