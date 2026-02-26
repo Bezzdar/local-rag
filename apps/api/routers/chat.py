@@ -2,6 +2,7 @@
 
 # --- Imports ---
 import asyncio
+import os
 import json
 import logging
 from uuid import uuid4
@@ -15,7 +16,6 @@ from ..services.chat_modes import (
     CHAT_MODES_BY_CODE,
     RAG_NO_SOURCES_MESSAGE,
     SCORE_THRESHOLDS,
-    build_answer,
     normalize_chat_mode,
 )
 from ..services.model_chat import build_chat_history, build_rag_context, generate_model_answer, stream_model_answer
@@ -68,6 +68,28 @@ def _retrieve_and_filter(
     return normalized, relevant
 
 
+
+
+def _resolve_base_url(base_url: str) -> str:
+    candidate = (base_url or "").strip()
+    if candidate:
+        return candidate
+    return os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+
+def _agent_context(selected_agent: dict | None) -> str:
+    if not selected_agent:
+        return "id=agent\nname=Assistant\nrole=generalist"
+    tools = selected_agent.get("tools", []) or []
+    requires = selected_agent.get("requires", []) or []
+    return (
+        f"id={selected_agent.get('id', '')}\n"
+        f"name={selected_agent.get('name', 'Assistant')}\n"
+        f"description={selected_agent.get('description', '')}\n"
+        f"tools={', '.join(tools) if tools else 'n/a'}\n"
+        f"requires={', '.join(requires) if requires else 'n/a'}"
+    )
+
+
 @router.get("/notebooks/{notebook_id}/messages")
 def list_messages(notebook_id: str):
     return store.messages.get(notebook_id, [])
@@ -86,13 +108,15 @@ async def chat(payload: ChatRequest) -> ChatResponse:
 
     if mode == "agent":
         selected_agent = resolve_agent(payload.agent_id)
-        response_text = build_answer(
-            mode,
-            payload.message,
-            [],
-            agent_id=selected_agent.get("id", "") if selected_agent else payload.agent_id,
-            agent_name=selected_agent.get("name", "") if selected_agent else "",
-            tools=selected_agent.get("tools", []) if selected_agent else [],
+        history = build_chat_history(store.messages.get(payload.notebook_id, []))
+        response_text = await generate_model_answer(
+            provider=payload.provider or str((selected_agent or {}).get("provider", "ollama")),
+            base_url=_resolve_base_url(payload.base_url),
+            model=payload.model or str((selected_agent or {}).get("model", "")),
+            history=history,
+            rag_context=_agent_context(selected_agent),
+            chat_mode="agent",
+            sources_found=False,
         )
         citations: list[Citation] = []
 
@@ -111,7 +135,7 @@ async def chat(payload: ChatRequest) -> ChatResponse:
             rag_context = build_rag_context(relevant_chunks, source_order_map) if sources_found else ""
             response_text = await generate_model_answer(
                 provider=payload.provider,
-                base_url=payload.base_url,
+                base_url=_resolve_base_url(payload.base_url),
                 model=payload.model,
                 history=history,
                 rag_context=rag_context,
@@ -159,26 +183,32 @@ async def chat_stream(
         # --- Agent: заглушка без retrieval ---
         if normalized_mode == "agent":
             selected_agent = resolve_agent(agent_id)
-            answer = build_answer(
-                normalized_mode,
-                message,
-                [],
-                agent_id=selected_agent.get("id", "") if selected_agent else agent_id,
-                agent_name=selected_agent.get("name", "") if selected_agent else "",
-                tools=selected_agent.get("tools", []) if selected_agent else [],
-            )
+            history = build_chat_history(store.messages.get(notebook_id, []), limit=max_history)
             citations: list[Citation] = []
-            for word in answer.split(" "):
-                token = f"{word} "
-                sent_packets += 1
-                sent_chars += len(token)
-                yield to_sse("token", {"text": token})
-                await asyncio.sleep(0.04)
+            assembled: list[str] = []
+            try:
+                async for token in stream_model_answer(
+                    provider=provider or str((selected_agent or {}).get("provider", "ollama")),
+                    base_url=_resolve_base_url(base_url),
+                    model=model or str((selected_agent or {}).get("model", "")),
+                    history=history,
+                    rag_context=_agent_context(selected_agent),
+                    chat_mode="agent",
+                    sources_found=False,
+                ):
+                    assembled.append(token)
+                    sent_packets += 1
+                    sent_chars += len(token)
+                    yield to_sse("token", {"text": token})
+            except RuntimeError as exc:
+                yield to_sse("error", {"detail": str(exc)})
+                yield to_sse("done", {"message_id": ""})
+                return
             yield to_sse("citations", [])
             if store.get_chat_version(notebook_id) != stream_version:
                 yield to_sse("done", {"message_id": ""})
                 return
-            assistant = store.add_message(notebook_id, "assistant", answer)
+            assistant = store.add_message(notebook_id, "assistant", "".join(assembled).strip())
             yield to_sse("done", {"message_id": assistant.id})
             return
 
