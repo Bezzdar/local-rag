@@ -1,5 +1,3 @@
-"""Роут для получения списка доступных агентов."""
-
 import json
 import logging
 from pathlib import Path
@@ -7,21 +5,18 @@ from typing import Any
 
 from fastapi import APIRouter
 
-# ⚠️ чтобы не конфликтовать с эндпоинтом, лучше переименовать импорт
 from ..services.agent_registry import list_agents as registry_list_agents
 from ..services.agent_registry import resolve_agent as registry_resolve_agent
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["agents"])
+router = APIRouter(prefix="/api", tags=["agents"])
 
-# Папка agent находится в корне репозитория (два уровня выше apps/api)
 _AGENTS_DIR = Path(__file__).resolve().parents[4] / "agent"
 _REGISTRY_PATH = _AGENTS_DIR / "registry.json"
 
 
 def _normalize_agent_manifest(raw: dict[str, Any]) -> dict[str, Any]:
-    """Нормализует манифест агента к стабильной структуре для UI."""
     tools = raw.get("tools")
     requires = raw.get("requires")
     notebook_modes = raw.get("notebook_modes")
@@ -98,7 +93,6 @@ def _discover_from_agent_folders() -> list[dict[str, Any]]:
 @router.get("/agents")
 @router.get("/api/agents")
 def get_agents() -> list[dict[str, Any]]:
-    """Возвращает список агентов из registry.json или директории agent/."""
     agents = _load_from_registry()
     if agents:
         return agents
@@ -106,7 +100,6 @@ def get_agents() -> list[dict[str, Any]]:
 
 
 def list_agents() -> list[dict[str, Any]]:
-    """Совместимый API для импортов из тестов/других модулей."""
     local_agents = _load_from_registry()
     if local_agents:
         return local_agents
@@ -119,7 +112,6 @@ def list_agents() -> list[dict[str, Any]]:
 
 
 def resolve_agent(agent_id: str) -> dict[str, Any] | None:
-    """Резолв агента через централизованный сервис с fallback на локальный список."""
     resolved = registry_resolve_agent(agent_id)
     if resolved:
         return resolved
