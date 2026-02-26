@@ -56,6 +56,17 @@ _SYSTEM_MODEL_NO_SOURCES = (
     "5. Предположения разрешены при явном их обозначении."
 )
 
+_SYSTEM_AGENT_TEMPLATE = (
+    "Ты специализированный доменный агент в составе мультиагентной системы.\n"
+    "Работай строго в своей роли и давай практически применимые ответы.\n\n"
+    "КАРТОЧКА АГЕНТА:\n{agent_context}\n\n"
+    "ПРАВИЛА:\n"
+    "1. Не выходи за пределы своей компетенции; если запрос вне зоны роли — явно сообщи об этом.\n"
+    "2. Структурируй ответ: цель → действия → результат/чек-лист.\n"
+    "3. Если в запросе есть неопределенность, предложи 2-3 уточняющих вопроса.\n"
+    "4. Пиши конкретно, без воды."
+)
+
 
 # --- Functions ---
 def build_chat_history(messages: Iterable[ChatMessage], limit: int = DEFAULT_MODEL_HISTORY) -> list[dict[str, str]]:
@@ -102,13 +113,17 @@ def build_messages_for_mode(
     """Собирает список сообщений для LLM с учётом режима и наличия источников.
 
     Args:
-        chat_mode: "rag" или "model".
+        chat_mode: "rag", "model" или "agent".
         history: История диалога (без системного сообщения).
         rag_context: Отформатированный контекст из retrieved чанков.
         sources_found: Были ли найдены релевантные источники.
     """
     if chat_mode == "rag":
         system_content = _SYSTEM_RAG_WITH_SOURCES.format(rag_context=rag_context)
+    elif chat_mode == "agent":
+        system_content = _SYSTEM_AGENT_TEMPLATE.format(
+            agent_context=rag_context or "id=agent\nrole=generalist"
+        )
     elif sources_found and rag_context:
         system_content = _SYSTEM_MODEL_WITH_SOURCES.format(rag_context=rag_context)
     else:
