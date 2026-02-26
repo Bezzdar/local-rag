@@ -91,6 +91,7 @@ def _discover_from_agent_folders() -> list[dict[str, Any]]:
 
 
 @router.get("/agents")
+@router.get("/api/agents")
 def get_agents() -> list[dict[str, Any]]:
     agents = _load_from_registry()
     if agents:
