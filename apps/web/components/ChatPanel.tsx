@@ -189,7 +189,11 @@ export default function ChatPanel(props: Props) {
               }}
             >
               {props.agents.length === 0 ? (
-                <option value="">{props.agentsLoading ? 'Загрузка агентов...' : 'Нет доступных агентов'}</option>
+                <option value="">
+                  {props.agentsLoading
+                    ? 'Загрузка агентов...'
+                    : (props.agentsError ? 'Ошибка загрузки агентов' : 'Нет доступных агентов')}
+                </option>
               ) : null}
               {props.agents.map((agent) => (
                 <option key={agent.id} value={agent.id} title={`${agent.description}${agent.tools.length ? ` • tools: ${agent.tools.join(', ')}` : ''}`}>

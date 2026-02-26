@@ -159,7 +159,32 @@ export const api = {
       throw new Error(await response.text());
     }
   },
-  listAgents: () => request('/api/agents', { method: 'GET' }, z.array(AgentManifestSchema)),
+  listAgents: async () => {
+    const schema = z.array(AgentManifestSchema);
+
+    const tryPath = async (path: string) => {
+      const response = await fetch(`${apiBase}${path}`, { method: 'GET', cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      return schema.parse(await response.json());
+    };
+
+    try {
+      const primary = await tryPath('/api/agents');
+      if (primary.length > 0) {
+        return primary;
+      }
+      // Совместимость со старыми backend-сборками, где роут без /api-префикса.
+      return await tryPath('/agents');
+    } catch (primaryError) {
+      try {
+        return await tryPath('/agents');
+      } catch {
+        throw primaryError;
+      }
+    }
+  },
   fileUrl: (path: string) => `${apiBase}/api/files?path=${encodeURIComponent(path)}`,
 };
 
