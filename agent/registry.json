@@ -1,23 +1,38 @@
 {
-  "version": 1,
+  "version": 2,
   "agents": [
     {
-      "id": "agent_001",
-      "name": "Dash",
-      "description": "Self-learning data agent for text-to-SQL insights. Grounds SQL generation in 6 layers of context and improves automatically with every query.",
+      "id": "copywriter",
+      "name": "Копирайтер",
+      "description": "Пишет тексты для лендингов, писем и презентаций: офферы, CTA, tone of voice.",
       "version": "1.0.0",
-      "requires": ["postgresql", "openai"],
-      "tools": ["text-to-sql", "schema-introspection", "learning-loop"],
-      "notebook_modes": ["agent"]
+      "requires": ["ollama"],
+      "tools": ["tone-adaptation", "headline-generator", "cta-polish"],
+      "notebook_modes": ["agent"],
+      "provider": "ollama",
+      "model": "llama3.1:8b"
     },
     {
-      "id": "agent_002",
-      "name": "Агент 2",
-      "description": "Заглушка второго агента.",
-      "version": "0.1.0",
-      "requires": [],
-      "tools": ["stub"],
-      "notebook_modes": ["agent"]
+      "id": "designer",
+      "name": "Дизайнер",
+      "description": "Генерирует UI/UX-концепции: структура экрана, композиция, цвет и типографика.",
+      "version": "1.0.0",
+      "requires": ["ollama"],
+      "tools": ["layout-review", "design-system-check", "ux-heuristics"],
+      "notebook_modes": ["agent"],
+      "provider": "ollama",
+      "model": "llama3.1:8b"
+    },
+    {
+      "id": "chemist",
+      "name": "Химик",
+      "description": "Помогает с формулами, реакциями, техкартами и проверкой технологических рисков.",
+      "version": "1.0.0",
+      "requires": ["ollama"],
+      "tools": ["reaction-planning", "safety-checklist", "stoichiometry"],
+      "notebook_modes": ["agent"],
+      "provider": "ollama",
+      "model": "llama3.1:8b"
     }
   ]
 }

@@ -47,3 +47,18 @@ def test_list_agents_falls_back_to_folders(tmp_path: Path, monkeypatch):
     assert [agent["id"] for agent in result] == ["agent_legacy"]
     assert result[0]["notebook_modes"] == ["agent"]
     assert result[0]["requires"] == ["db"]
+
+
+def test_agents_endpoint_available_on_both_paths():
+    from fastapi.testclient import TestClient
+    from apps.api.main import app
+
+    client = TestClient(app)
+
+    response_api = client.get('/api/agents')
+    response_plain = client.get('/agents')
+
+    assert response_api.status_code == 200
+    assert response_plain.status_code == 200
+    assert isinstance(response_api.json(), list)
+    assert isinstance(response_plain.json(), list)
