@@ -7,14 +7,12 @@ from typing import Any
 
 from fastapi import APIRouter
 
-# ⚠️ чтобы не конфликтовать с эндпоинтом, лучше переименовать импорт
 from ..services.agent_registry import list_agents as registry_list_agents
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["agents"])
 
-# Папка agent находится в корне репозитория (два уровня выше apps/api)
 _AGENTS_DIR = Path(__file__).resolve().parents[4] / "agent"
 _REGISTRY_PATH = _AGENTS_DIR / "registry.json"
 
