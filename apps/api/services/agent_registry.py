@@ -19,6 +19,8 @@ def normalize_agent_manifest(raw: dict[str, Any]) -> dict[str, Any]:
     tools = raw.get("tools")
     requires = raw.get("requires")
     notebook_modes = raw.get("notebook_modes")
+    provider = raw.get("provider")
+    model = raw.get("model")
 
     return {
         "id": str(raw.get("id", "")).strip(),
@@ -28,6 +30,8 @@ def normalize_agent_manifest(raw: dict[str, Any]) -> dict[str, Any]:
         "requires": [str(item).strip() for item in requires if str(item).strip()] if isinstance(requires, list) else [],
         "tools": [str(item).strip() for item in tools if str(item).strip()] if isinstance(tools, list) else [],
         "notebook_modes": [str(item).strip() for item in notebook_modes if str(item).strip()] if isinstance(notebook_modes, list) else ["agent"],
+        "provider": str(provider or "ollama").strip().lower() or "ollama",
+        "model": str(model or "").strip(),
     }
 
 
