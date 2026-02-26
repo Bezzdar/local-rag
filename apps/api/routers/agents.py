@@ -10,7 +10,7 @@ from ..services.agent_registry import resolve_agent as registry_resolve_agent
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["agents"])
+router = APIRouter(prefix="/api", tags=["agents"])
 
 _AGENTS_DIR = Path(__file__).resolve().parents[4] / "agent"
 _REGISTRY_PATH = _AGENTS_DIR / "registry.json"
