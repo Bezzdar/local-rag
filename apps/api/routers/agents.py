@@ -14,15 +14,12 @@ router = APIRouter(prefix="/api", tags=["agents"])
 @router.get("/agents")
 @router.get("/api/agents")
 def get_agents() -> list[dict[str, Any]]:
-    """Возвращает список агентов с устойчивым fallback-порядком."""
     return list_agents()
 
 
 def list_agents() -> list[dict[str, Any]]:
-    """Совместимый API для импортов из тестов/других модулей."""
     return registry_list_agents()
 
 
 def resolve_agent(agent_id: str) -> dict[str, Any] | None:
-    """Резолв агента через централизованный сервис."""
     return registry_resolve_agent(agent_id)

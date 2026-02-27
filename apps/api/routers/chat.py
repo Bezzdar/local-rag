@@ -124,7 +124,6 @@ async def chat(payload: ChatRequest) -> ChatResponse:
         citations = [_to_citation(payload.notebook_id, c, source_order_map) for c in relevant_chunks]
 
         if mode == "rag" and not sources_found:
-            # RAG-режим без источников: LLM не вызывается
             response_text = RAG_NO_SOURCES_MESSAGE
         else:
             history = build_chat_history(store.messages.get(payload.notebook_id, []))
@@ -176,7 +175,6 @@ async def chat_stream(
         sent_chars = 0
         source_order_map = store.get_source_order_map(notebook_id)
 
-        # --- Agent: заглушка без retrieval ---
         if normalized_mode == "agent":
             selected_agent = resolve_agent(agent_id)
             history = build_chat_history(store.messages.get(notebook_id, []), limit=max_history)
@@ -208,12 +206,10 @@ async def chat_stream(
             yield to_sse("done", {"message_id": assistant.id})
             return
 
-        # --- RAG / Model: retrieval + пороговая фильтрация ---
         _, relevant_chunks = _retrieve_and_filter(notebook_id, message, selected_ids, normalized_mode)
         sources_found = bool(relevant_chunks)
         citations = [_to_citation(notebook_id, c, source_order_map) for c in relevant_chunks]
 
-        # RAG без источников: возвращаем сообщение без вызова LLM
         if normalized_mode == "rag" and not sources_found:
             answer = RAG_NO_SOURCES_MESSAGE
             for word in answer.split(" "):
