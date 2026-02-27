@@ -3,6 +3,42 @@ import { AgentManifestSchema, ChatMessageSchema, CitationSchema, GlobalNoteSchem
 
 const apiBase = (process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000').replace(/\/+$/, '');
 
+const DEFAULT_AGENT_MANIFESTS = [
+  {
+    id: 'copywriter',
+    name: 'Копирайтер',
+    description: 'Пишет тексты для лендингов, писем и презентаций: офферы, CTA, tone of voice.',
+    version: '1.0.0',
+    requires: ['ollama'],
+    tools: ['tone-adaptation', 'headline-generator', 'cta-polish'],
+    notebook_modes: ['agent'],
+    provider: 'ollama',
+    model: 'llama3.1:8b',
+  },
+  {
+    id: 'designer',
+    name: 'Дизайнер',
+    description: 'Генерирует UI/UX-концепции: структура экрана, композиция, цвет и типографика.',
+    version: '1.0.0',
+    requires: ['ollama'],
+    tools: ['layout-review', 'design-system-check', 'ux-heuristics'],
+    notebook_modes: ['agent'],
+    provider: 'ollama',
+    model: 'llama3.1:8b',
+  },
+  {
+    id: 'chemist',
+    name: 'Химик',
+    description: 'Помогает с формулами, реакциями, техкартами и проверкой технологических рисков.',
+    version: '1.0.0',
+    requires: ['ollama'],
+    tools: ['reaction-planning', 'safety-checklist', 'stoichiometry'],
+    notebook_modes: ['agent'],
+    provider: 'ollama',
+    model: 'llama3.1:8b',
+  },
+] as const;
+
 async function request<T>(path: string, init: RequestInit, schema: z.ZodType<T>): Promise<T> {
   const response = await fetch(`${apiBase}${path}`, { ...init, cache: 'no-store' });
   if (!response.ok) {
@@ -176,14 +212,23 @@ export const api = {
         return primary;
       }
       // Совместимость со старыми backend-сборками, где роут без /api-префикса.
-      return await tryPath('/agents');
-    } catch (primaryError) {
+      const legacy = await tryPath('/agents');
+      if (legacy.length > 0) {
+        return legacy;
+      }
+    } catch {
       try {
-        return await tryPath('/agents');
+        const legacy = await tryPath('/agents');
+        if (legacy.length > 0) {
+          return legacy;
+        }
       } catch {
-        throw primaryError;
+        // noop: use local fallback below
       }
     }
+
+    // Безопасный fallback: позволяем выбрать агентов даже если backend временно недоступен.
+    return schema.parse(DEFAULT_AGENT_MANIFESTS);
   },
   fileUrl: (path: string) => `${apiBase}/api/files?path=${encodeURIComponent(path)}`,
 };
