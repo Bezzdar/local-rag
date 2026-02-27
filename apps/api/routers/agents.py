@@ -8,7 +8,7 @@ from fastapi import APIRouter
 from ..services.agent_registry import list_agents as registry_list_agents
 from ..services.agent_registry import resolve_agent as registry_resolve_agent
 
-router = APIRouter(prefix="/api", tags=["agents"])
+router = APIRouter(tags=["agents"])
 
 
 @router.get("/agents")
