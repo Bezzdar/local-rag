@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["agents"])
 
-# Папка agent находится в корне репозитория (три уровня выше apps/api/routers)
 _AGENTS_DIR = Path(__file__).resolve().parents[3] / "agent"
 _REGISTRY_PATH = _AGENTS_DIR / "registry.json"
 
