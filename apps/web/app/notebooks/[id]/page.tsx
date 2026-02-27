@@ -111,6 +111,13 @@ export default function NotebookWorkspacePage() {
     syncSelectedAgentWithManifest(agents.data);
   }, [agents.data]);
 
+  const effectiveAgentId = useMemo(() => {
+    if (selectedAgentId) {
+      return selectedAgentId;
+    }
+    return agents.data?.[0]?.id ?? '';
+  }, [agents.data, selectedAgentId]);
+
   const activeNotebook = useMemo(
     () => notebooks.data?.find((nb) => nb.id === notebookId),
     [notebooks.data, notebookId],
