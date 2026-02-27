@@ -1,5 +1,6 @@
-"""Роут для получения списка доступных агентов."""
-
+import json
+import logging
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter
@@ -7,7 +8,7 @@ from fastapi import APIRouter
 from ..services.agent_registry import list_agents as registry_list_agents
 from ..services.agent_registry import resolve_agent as registry_resolve_agent
 
-router = APIRouter(tags=["agents"])
+router = APIRouter(prefix="/api", tags=["agents"])
 
 
 @router.get("/agents")
