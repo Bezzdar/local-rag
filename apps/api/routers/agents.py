@@ -9,13 +9,14 @@ from fastapi import APIRouter
 
 # ⚠️ чтобы не конфликтовать с эндпоинтом, лучше переименовать импорт
 from ..services.agent_registry import list_agents as registry_list_agents
+from ..services.agent_registry import resolve_agent as registry_resolve_agent
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["agents"])
 
-# Папка agent находится в корне репозитория (два уровня выше apps/api)
-_AGENTS_DIR = Path(__file__).resolve().parents[4] / "agent"
+# Папка agent находится в корне репозитория (три уровня выше apps/api/routers)
+_AGENTS_DIR = Path(__file__).resolve().parents[3] / "agent"
 _REGISTRY_PATH = _AGENTS_DIR / "registry.json"
 
 
@@ -24,6 +25,8 @@ def _normalize_agent_manifest(raw: dict[str, Any]) -> dict[str, Any]:
     tools = raw.get("tools")
     requires = raw.get("requires")
     notebook_modes = raw.get("notebook_modes")
+    provider = raw.get("provider")
+    model = raw.get("model")
 
     return {
         "id": str(raw.get("id", "")).strip(),
@@ -37,6 +40,8 @@ def _normalize_agent_manifest(raw: dict[str, Any]) -> dict[str, Any]:
             if isinstance(notebook_modes, list)
             else ["agent"]
         ),
+        "provider": str(provider or "ollama").strip().lower() or "ollama",
+        "model": str(model or "").strip(),
     }
 
 
@@ -91,9 +96,39 @@ def _discover_from_agent_folders() -> list[dict[str, Any]]:
 
 
 @router.get("/agents")
+@router.get("/api/agents")
 def get_agents() -> list[dict[str, Any]]:
-    """Возвращает список агентов из registry.json или директории agent/."""
-    agents = _load_from_registry()
-    if agents:
-        return agents
-    return _discover_from_agent_folders()
+    """Возвращает список агентов с устойчивым fallback-порядком."""
+    return list_agents()
+
+
+def list_agents() -> list[dict[str, Any]]:
+    """Совместимый API для импортов из тестов/других модулей."""
+    local_agents = _load_from_registry()
+    if local_agents:
+        return local_agents
+
+    folder_agents = _discover_from_agent_folders()
+    if folder_agents:
+        return folder_agents
+
+    return registry_list_agents()
+
+
+def resolve_agent(agent_id: str) -> dict[str, Any] | None:
+    """Резолв агента через централизованный сервис с fallback на локальный список."""
+    resolved = registry_resolve_agent(agent_id)
+    if resolved:
+        return resolved
+
+    agents = list_agents()
+    if not agents:
+        return None
+
+    normalized_id = (agent_id or "").strip()
+    if normalized_id:
+        for agent in agents:
+            if agent.get("id") == normalized_id:
+                return agent
+
+    return agents[0]
