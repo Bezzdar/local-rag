@@ -4,13 +4,41 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Папка agent находится в корне репозитория (два уровня выше apps/api)
-AGENTS_DIR = Path(__file__).resolve().parents[3] / "agent"
+
+def _resolve_agents_dir() -> Path:
+    """Определяет директорию `agent/` с приоритетом env/cwd/module-path."""
+    env_value = os.getenv("AGENTS_DIR", "").strip()
+    candidates: list[Path] = []
+    if env_value:
+        candidates.append(Path(env_value).expanduser())
+
+    # На практике приложение обычно запускается из корня репозитория.
+    candidates.append(Path.cwd() / "agent")
+
+    module_path = Path(__file__).resolve()
+    # Исторически в репозитории это parents[3] -> <repo>/agent.
+    candidates.append(module_path.parents[3] / "agent")
+    # Дополнительный fallback для нестандартных сборок/запусков.
+    candidates.append(module_path.parents[2] / "agent")
+
+    for candidate in candidates:
+        try:
+            if candidate.is_dir():
+                return candidate
+        except Exception:
+            continue
+
+    # Возвращаем первый кандидат для понятного логирования пути, даже если он не существует.
+    return candidates[0] if candidates else Path("agent")
+
+
+AGENTS_DIR = _resolve_agents_dir()
 REGISTRY_PATH = AGENTS_DIR / "registry.json"
 
 
@@ -19,6 +47,8 @@ def normalize_agent_manifest(raw: dict[str, Any]) -> dict[str, Any]:
     tools = raw.get("tools")
     requires = raw.get("requires")
     notebook_modes = raw.get("notebook_modes")
+    provider = raw.get("provider")
+    model = raw.get("model")
 
     return {
         "id": str(raw.get("id", "")).strip(),
@@ -28,6 +58,8 @@ def normalize_agent_manifest(raw: dict[str, Any]) -> dict[str, Any]:
         "requires": [str(item).strip() for item in requires if str(item).strip()] if isinstance(requires, list) else [],
         "tools": [str(item).strip() for item in tools if str(item).strip()] if isinstance(tools, list) else [],
         "notebook_modes": [str(item).strip() for item in notebook_modes if str(item).strip()] if isinstance(notebook_modes, list) else ["agent"],
+        "provider": str(provider or "ollama").strip().lower() or "ollama",
+        "model": str(model or "").strip(),
     }
 
 

@@ -161,27 +161,6 @@ export default function ChatPanel(props: Props) {
           >
             Очистить чат
           </button>
-          {props.mode === 'agent' && props.agents.length > 0 && (
-            <div className="flex items-center gap-1 rounded border border-slate-300 bg-white p-1" title="Выбор агента из манифеста"> 
-              {props.agents.map((agent) => {
-                const isActive = agent.id === props.agentId;
-                return (
-                  <button
-                    key={agent.id}
-                    type="button"
-                    className={`rounded px-2 py-1 text-xs transition-colors ${isActive ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
-                    title={`${agent.description}${agent.tools.length ? ` • tools: ${agent.tools.join(', ')}` : ''}`}
-                    onClick={() => {
-                      logClientEvent({ event: 'ui.agent.change', notebookId: props.notebookId, metadata: { agentId: agent.id } });
-                      props.onAgentChange(agent.id);
-                    }}
-                  >
-                    {agent.name}
-                  </button>
-                );
-              })}
-            </div>
-          )}
           <select
             className="rounded border border-slate-300 p-2 text-sm"
             value={props.mode}
@@ -197,6 +176,32 @@ export default function ChatPanel(props: Props) {
               </option>
             ))}
           </select>
+          {props.mode === 'agent' ? (
+            <select
+              className="rounded border border-slate-300 bg-white p-2 text-sm disabled:bg-slate-100 disabled:text-slate-400"
+              value={props.agentId}
+              disabled={props.agents.length === 0}
+              title="Выбор конкретного агента"
+              onChange={(event) => {
+                const nextAgentId = event.target.value;
+                logClientEvent({ event: 'ui.agent.change', notebookId: props.notebookId, metadata: { agentId: nextAgentId } });
+                props.onAgentChange(nextAgentId);
+              }}
+            >
+              {props.agents.length === 0 ? (
+                <option value="">
+                  {props.agentsLoading
+                    ? 'Загрузка агентов...'
+                    : (props.agentsError ? 'Ошибка загрузки агентов' : 'Нет доступных агентов')}
+                </option>
+              ) : null}
+              {props.agents.map((agent) => (
+                <option key={agent.id} value={agent.id} title={`${agent.description}${agent.tools.length ? ` • tools: ${agent.tools.join(', ')}` : ''}`}>
+                  {agent.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
         </div>
       </div>
 
