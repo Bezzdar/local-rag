@@ -10,7 +10,7 @@
       "tools": ["tone-adaptation", "headline-generator", "cta-polish"],
       "notebook_modes": ["agent"],
       "provider": "ollama",
-      "model": "llama3.1:8b"
+      "model": "ministral-3:8b"
     },
     {
       "id": "designer",
@@ -21,7 +21,7 @@
       "tools": ["layout-review", "design-system-check", "ux-heuristics"],
       "notebook_modes": ["agent"],
       "provider": "ollama",
-      "model": "llama3.1:8b"
+      "model": "ministral-3:8b"
     },
     {
       "id": "chemist",
@@ -32,7 +32,7 @@
       "tools": ["reaction-planning", "safety-checklist", "stoichiometry"],
       "notebook_modes": ["agent"],
       "provider": "ollama",
-      "model": "llama3.1:8b"
+      "model": "ministral-3:8b"
     }
   ]
 }

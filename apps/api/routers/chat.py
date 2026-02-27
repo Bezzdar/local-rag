@@ -1,5 +1,3 @@
-"""Роуты чата и потоковой выдачи ответов."""
-
 # --- Imports ---
 import asyncio
 import os
@@ -26,7 +24,6 @@ router = APIRouter(prefix="/api", tags=["chat"])
 logger = logging.getLogger(__name__)
 
 
-# --- Основные блоки ---
 def to_sse(event: str, payload: object) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
@@ -35,7 +32,6 @@ def _to_citation(notebook_id: str, chunk: dict, source_order_map: dict[str, int]
     filename, page, section = chunk_to_citation_fields(chunk)
     source_id = chunk.get("source_id", "unknown")
     doc_order = source_order_map.get(source_id, 0)
-    # Используем нормализованный score из чанка (уже в диапазоне 0–1)
     score = min(1.0, max(0.0, float(chunk.get("score", 0.0))))
     return Citation(
         id=str(uuid4()),
@@ -55,12 +51,12 @@ def _retrieve_and_filter(
     selected_ids: list[str],
     mode: str,
 ) -> tuple[list[dict], list[dict]]:
-    """Выполняет поиск, нормализует оценки и фильтрует по порогу режима.
+    # Выполняет поиск, нормализует оценки и фильтрует по порогу режима.
 
-    Returns:
-        (all_chunks_normalized, relevant_chunks) — все нормализованные чанки
-        и только те, что прошли пороговый фильтр.
-    """
+    # Returns:
+    #     (all_chunks_normalized, relevant_chunks) — все нормализованные чанки
+    #     и только те, что прошли пороговый фильтр.
+    
     raw_chunks = search(notebook_id, message, selected_ids, top_n=5)
     normalized = normalize_chunk_scores(raw_chunks)
     threshold = SCORE_THRESHOLDS.get(mode, 0.0)
@@ -238,7 +234,6 @@ async def chat_stream(
             yield to_sse("done", {"message_id": assistant.id})
             return
 
-        # RAG с источниками или Model (с источниками или без): вызываем LLM
         history = build_chat_history(store.messages.get(notebook_id, []), limit=max_history)
         rag_context = build_rag_context(relevant_chunks, source_order_map) if sources_found else ""
 
