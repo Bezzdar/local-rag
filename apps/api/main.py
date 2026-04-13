@@ -2,20 +2,24 @@
 
 # --- Imports ---
 import logging
+import os
 import time
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .logging_setup import setup_logging
-from .routers import agents, chat, citations, client_events, global_notes, llm, notebooks, sources
+from .services.auth_articles_db import init_content_db, seed_admin_if_missing
+from .routers import agents, auth_articles, chat, citations, client_events, global_notes, llm, notebooks, sources
 
 app = FastAPI(title="Local RAG Assistant API")
 logger = logging.getLogger(__name__)
 
+cors_origins = [item.strip() for item in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://46.17.102.10:3000").split(",") if item.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -29,12 +33,15 @@ app.include_router(global_notes.router)
 app.include_router(llm.router)
 app.include_router(client_events.router)
 app.include_router(agents.router)
+app.include_router(auth_articles.router)
 
 
 # --- Основные блоки ---
 @app.on_event("startup")
 def on_startup() -> None:
     app_log, ui_log = setup_logging()
+    init_content_db()
+    seed_admin_if_missing()
     logger.info(
         "Application startup completed",
         extra={"event": "app.ready", "details": f"app_log={app_log} | ui_log={ui_log}"},

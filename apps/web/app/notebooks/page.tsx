@@ -92,7 +92,7 @@ export default function NotebooksPage() {
         <div className="min-w-0 flex-1 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-semibold">Notebooks</h1>
+              <div className="flex items-center gap-3"><h1 className="text-xl font-semibold">Notebooks</h1><Link href="/articles" className="text-sm text-blue-600 hover:underline">Статьи/Авторизация</Link></div>
               <ConnectionIndicator />
             </div>
             <button
