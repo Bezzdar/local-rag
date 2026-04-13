@@ -147,3 +147,37 @@ export const ParsingSettingsSchema = z.object({
 });
 
 export type ParsingSettings = z.infer<typeof ParsingSettingsSchema>;
+
+
+export const UserRoleSchema = z.enum(['user', 'moderator', 'admin']);
+
+export const AuthResponseSchema = z.object({
+  access_token: z.string(),
+  user_id: z.string(),
+  email: z.string().email(),
+  display_name: z.string(),
+  role: UserRoleSchema,
+});
+
+export const ViewerSchema = z.object({
+  user_id: z.string(),
+  email: z.string().email(),
+  display_name: z.string(),
+  role: UserRoleSchema,
+});
+
+export const ArticleSchema = z.object({
+  id: z.string(),
+  author_id: z.string(),
+  author_name: z.string(),
+  title: z.string(),
+  summary: z.string(),
+  content: z.string(),
+  status: z.enum(['draft', 'published', 'archived']),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export type AuthResponse = z.infer<typeof AuthResponseSchema>;
+export type Viewer = z.infer<typeof ViewerSchema>;
+export type Article = z.infer<typeof ArticleSchema>;

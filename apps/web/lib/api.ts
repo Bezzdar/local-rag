@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { AgentManifestSchema, ChatMessageSchema, CitationSchema, GlobalNoteSchema, IndividualConfig, NotebookSchema, ParsingSettings, ParsingSettingsSchema, SavedCitationSchema, SourceSchema } from '@/types/dto';
+import { AgentManifestSchema, ArticleSchema, AuthResponseSchema, ChatMessageSchema, CitationSchema, GlobalNoteSchema, IndividualConfig, NotebookSchema, ParsingSettings, ParsingSettingsSchema, SavedCitationSchema, SourceSchema, ViewerSchema } from '@/types/dto';
 
-const apiBase = (process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000').replace(/\/+$/, '');
+const apiBase = (process.env.NEXT_PUBLIC_API_BASE ?? 'http://46.17.102.10:8000').replace(/\/+$/, '');
 
 const DEFAULT_AGENT_MANIFESTS = [
   {
@@ -38,6 +38,27 @@ const DEFAULT_AGENT_MANIFESTS = [
     model: 'llama3.1:8b',
   },
 ] as const;
+
+
+const AUTH_TOKEN_KEY = 'rag.auth.token';
+
+function authHeaders(): HeadersInit {
+  if (typeof window === 'undefined') return {};
+  const token = window.localStorage.getItem(AUTH_TOKEN_KEY);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export function saveAuthToken(token: string): void {
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+  }
+}
+
+export function clearAuthToken(): void {
+  if (typeof window !== 'undefined') {
+    window.localStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+}
 
 async function request<T>(path: string, init: RequestInit, schema: z.ZodType<T>): Promise<T> {
   const response = await fetch(`${apiBase}${path}`, { ...init, cache: 'no-store' });
@@ -230,6 +251,16 @@ export const api = {
     // Безопасный fallback: позволяем выбрать агентов даже если backend временно недоступен.
     return schema.parse(DEFAULT_AGENT_MANIFESTS);
   },
+  register: (payload: { email: string; password: string; display_name: string }) =>
+    request('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, AuthResponseSchema),
+  login: (payload: { email: string; password: string }) =>
+    request('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, AuthResponseSchema),
+  me: () => request('/api/auth/me', { method: 'GET', headers: authHeaders() }, ViewerSchema),
+  listArticles: () => request('/api/articles', { method: 'GET', headers: authHeaders() }, z.array(ArticleSchema)),
+  createArticle: (payload: { title: string; summary: string; content: string }) =>
+    request('/api/articles', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, ArticleSchema),
+  updateArticle: (articleId: string, payload: { title?: string; summary?: string; content?: string; status?: 'draft' | 'published' | 'archived' }) =>
+    request(`/api/articles/${articleId}`, { method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, ArticleSchema),
   fileUrl: (path: string) => `${apiBase}/api/files?path=${encodeURIComponent(path)}`,
 };
 
